@@ -55,6 +55,7 @@ type RecentOrder = { file: string; customer: string; status: string; total: stri
 const stageOrder: Stage[] = ["login", "dashboard", "upload", "review", "pricing", "quotation"];
 const parsingSteps = ["Upload received", "PDF analyzed", "Order table detected", "9 items extracted", "Fields ready for review"];
 const pricingSteps = ["Order approved", "Customer identified", "Rate card checked", "Inventory price fallback ready", "Quotation prepared"];
+const supportedUploadTypes = [".pdf", ".jpg", ".jpeg", ".png", ".webp", ".gif"];
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -87,52 +88,17 @@ function normalizeRecentOrders(value: unknown): RecentOrder[] {
   return Array.isArray(value) ? (value as RecentOrder[]) : [];
 }
 
-function readInitialUser(): User | null {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const storedUser = window.sessionStorage.getItem("busyNotify:user");
-  if (!storedUser) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(storedUser) as User;
-  } catch {
-    window.sessionStorage.removeItem("busyNotify:user");
-    return null;
-  }
-}
-
-function readInitialOrders(): RecentOrder[] {
-  if (typeof window === "undefined") {
-    return [];
-  }
-
-  const storedOrders = window.localStorage.getItem("busyNotify:recent-orders");
-  if (!storedOrders) {
-    return [];
-  }
-
-  try {
-    return normalizeRecentOrders(JSON.parse(storedOrders));
-  } catch {
-    window.localStorage.removeItem("busyNotify:recent-orders");
-    return [];
-  }
-}
-
 export function ProcurementWorkflow() {
-  const [stage, setStage] = useState<Stage>(() => (readInitialUser() ? "dashboard" : "login"));
-  const [user, setUser] = useState<User | null>(() => readInitialUser());
+  const [stage, setStage] = useState<Stage>("login");
+  const [user, setUser] = useState<User | null>(null);
   const [login, setLogin] = useState<LoginForm>({ email: "", password: "" });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadResult, setUploadResult] = useState<ParseOrderResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, DraftItem>>({});
   const [customerQuery, setCustomerQuery] = useState("");
   const [pricingOverrides, setPricingOverrides] = useState<Record<string, string>>({});
-  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>(() => readInitialOrders());
+  const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
+  const [hydrated, setHydrated] = useState(false);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState(parsingSteps[0]);
   const [pricingProgress, setPricingProgress] = useState(0);
@@ -144,8 +110,41 @@ export function ProcurementWorkflow() {
   const printRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const storedUser = window.sessionStorage.getItem("busyNotify:user");
+      const storedOrders = window.localStorage.getItem("busyNotify:recent-orders");
+
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser) as User;
+          setUser(parsedUser);
+          setStage("dashboard");
+        } catch {
+          window.sessionStorage.removeItem("busyNotify:user");
+        }
+      }
+
+      if (storedOrders) {
+        try {
+          setRecentOrders(normalizeRecentOrders(JSON.parse(storedOrders)));
+        } catch {
+          window.localStorage.removeItem("busyNotify:recent-orders");
+        }
+      }
+
+      setHydrated(true);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) {
+      return;
+    }
+
     window.localStorage.setItem("busyNotify:recent-orders", JSON.stringify(recentOrders));
-  }, [recentOrders]);
+  }, [hydrated, recentOrders]);
 
   const currentCustomer = useMemo(() => matchCustomer(customerQuery), [customerQuery]);
   const pricingPreview = useMemo(
@@ -199,8 +198,10 @@ export function ProcurementWorkflow() {
   };
 
   const uploadFile = async (file: File) => {
-    if (!file.name.toLowerCase().endsWith(".pdf")) {
-      setError("Only PDF files are supported for this workflow.");
+    const lowerName = file.name.toLowerCase();
+    const isSupported = supportedUploadTypes.some((extension) => lowerName.endsWith(extension));
+    if (!isSupported) {
+      setError("Only PDF, JPG, JPEG, PNG, WebP, and GIF files are supported for this workflow.");
       return;
     }
 
@@ -615,7 +616,7 @@ function UploadPane({ busy, selectedFile, onSelectFile, onBack }: { busy: boolea
       >
         <input
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,image/jpeg,image/jpg,image/png,image/webp,image/gif,.pdf,.jpg,.jpeg,.png,.webp,.gif"
           className="absolute inset-0 z-10 h-full w-full cursor-pointer opacity-0"
           disabled={busy}
           onChange={async (event) => {
@@ -630,7 +631,7 @@ function UploadPane({ busy, selectedFile, onSelectFile, onBack }: { busy: boolea
           <h2 className="mt-6 text-3xl font-semibold tracking-tight text-slate-950">Drop order PDF here</h2>
           <p className="mt-3 max-w-xl text-base leading-7 text-slate-600">Upload the purchase order and the backend will parse it. The commercial steps still wait for a human review.</p>
           <button type="button" className="mt-6 rounded-2xl bg-teal-500 px-5 py-3 font-semibold text-white transition hover:bg-teal-400">Browse Files</button>
-          <p className="mt-4 text-sm text-slate-500">PDF supported. Image support can be added later.</p>
+          <p className="mt-4 text-sm text-slate-500">PDF, JPG, PNG, WebP, and GIF supported.</p>
           {selectedFile && <div className="mt-6 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 text-sm text-emerald-800"><CheckCircle2 className="h-4 w-4" /> {selectedFile.name} uploaded</div>}
         </div>
       </div>

@@ -1,0 +1,41 @@
+[
+  {
+    "customer_id": "CUST001",
+    "canonical_name": "Mahatma Gandhi Medical College and Hospital",
+    "aliases": [
+      "Mahatma Gandhi Medical College & Hospital",
+      "MGMC Hospital",
+      "MGH Jaipur",
+      "Mahatma Gandhi Medical College and Hospital, Jaipur"
+    ],
+    "rate_card_id": "RC-2026-MGMC",
+    "valid_from": "2026-04-01",
+    "valid_to": "2027-03-31",
+    "status": "active"
+  },
+  {
+    "customer_id": "CUST002",
+    "canonical_name": "ABC Hospital",
+    "aliases": [
+      "A.B.C. Hospital",
+      "ABC HOSPITAL",
+      "ABC Hospital Jaipur"
+    ],
+    "rate_card_id": "RC-2026-ABC",
+    "valid_from": "2026-04-01",
+    "valid_to": "2027-03-31",
+    "status": "active"
+  },
+  {
+    "customer_id": "CUST003",
+    "canonical_name": "XYZ Diagnostics",
+    "aliases": [
+      "XYZ Diagnostic Center",
+      "XYZ Diagnostics Jaipur"
+    ],
+    "rate_card_id": null,
+    "valid_from": null,
+    "valid_to": null,
+    "status": "none"
+  }
+]

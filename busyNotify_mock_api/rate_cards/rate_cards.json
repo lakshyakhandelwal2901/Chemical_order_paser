@@ -1,0 +1,44 @@
+[
+  {
+    "rate_card_id": "RC-2025-MGMC",
+    "customer_id": "CUST001",
+    "name": "Mahatma Gandhi Medical College Historical Rate Card",
+    "valid_from": "2025-04-01",
+    "valid_to": "2026-03-31",
+    "currency": "INR",
+    "items": [
+      { "sku": "ALUC01", "rate": 392.0 },
+      { "sku": "CITR01", "rate": 728.0 },
+      { "sku": "EOSC01", "rate": 472.0 }
+    ]
+  },
+  {
+    "rate_card_id": "RC-2026-MGMC",
+    "customer_id": "CUST001",
+    "name": "Mahatma Gandhi Medical College Annual Rate Card",
+    "valid_from": "2026-04-01",
+    "valid_to": "2027-03-31",
+    "currency": "INR",
+    "items": [
+      { "sku": "ALUC01", "rate": 385.0 },
+      { "sku": "CITR01", "rate": 710.0 },
+      { "sku": "EOSC01", "rate": 460.0 },
+      { "sku": "CHEM004", "rate": 63.0 },
+      { "sku": "MED010", "rate": 3320.0 },
+      { "sku": "MED009", "rate": 3880.0 }
+    ]
+  },
+  {
+    "rate_card_id": "RC-2026-ABC",
+    "customer_id": "CUST002",
+    "name": "ABC Hospital Annual Rate Card",
+    "valid_from": "2026-04-01",
+    "valid_to": "2027-03-31",
+    "currency": "INR",
+    "items": [
+      { "sku": "ALUC01", "rate": 385.0 },
+      { "sku": "CITR01", "rate": 710.0 },
+      { "sku": "EOSC01", "rate": 460.0 }
+    ]
+  }
+]
