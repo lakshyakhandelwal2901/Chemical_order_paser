@@ -8,9 +8,9 @@ import { checkInventoryBulk } from "./inventoryCheck.js";
 import { quoteFromParsedRows } from "./quotation.js";
 import { buildQuotationPdfBuffer } from "./quotationPdf.js";
 
-if (!process.env.GOOGLE_API_KEY) {
+if (!process.env.OCR_SPACE_API_KEY && !process.env.OCRSPACE_API_KEY) {
   console.warn(
-    "GOOGLE_API_KEY is missing. Local PDF parsing will still work, but scanned PDFs/images will fail until you set the Gemini key."
+    "OCR_SPACE_API_KEY is missing. Local PDF parsing will still work, but scanned PDFs/images will use the OCR.space demo key unless you set your own key."
   );
 }
 
@@ -81,7 +81,7 @@ app.post("/api/parse-orders", upload.array("files", 25), async (req, res) => {
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
       parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-      parsed_by_ai: results.filter((r) => r.source === "ai_fallback").length,
+      parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
       total_line_items: flatRows.length,
     },
   });
@@ -168,7 +168,7 @@ app.post("/api/parse-orders/check-inventory", upload.array("files", 25), async (
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_ai: results.filter((r) => r.source === "ai_fallback").length,
+        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
         total_line_items: flatRows.length,
         inventory_checked_items: inventoryCheck.checked ?? 0,
         inventory_skipped_items: inventoryCheck.skipped?.length ?? 0,
@@ -184,7 +184,7 @@ app.post("/api/parse-orders/check-inventory", upload.array("files", 25), async (
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_ai: results.filter((r) => r.source === "ai_fallback").length,
+        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
         total_line_items: flatRows.length,
       },
     });
@@ -239,7 +239,7 @@ app.post("/api/parse-orders/quote", upload.array("files", 25), async (req, res) 
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_ai: results.filter((r) => r.source === "ai_fallback").length,
+        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
         total_line_items: flatRows.length,
         quoted_items: quotation.checked ?? 0,
         skipped_items: quotation.skipped?.length ?? 0,
@@ -257,7 +257,7 @@ app.post("/api/parse-orders/quote", upload.array("files", 25), async (req, res) 
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_ai: results.filter((r) => r.source === "ai_fallback").length,
+        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
         total_line_items: flatRows.length,
       },
     });

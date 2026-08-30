@@ -231,11 +231,22 @@ def quote_line_item(customer: Optional[dict], quotation_date: date, item: dict):
             "item_name": item.get("item_name"),
             "sku": item.get("sku"),
             "message": "Item not found in mock inventory",
+            "inventory_review": {
+                "status": "not_found",
+                "needs_order": quantity,
+                "available_quantity": 0,
+            },
             "pricing": {
                 "source": "not_found",
                 "rate_card_id": None,
                 "rate": None,
                 "inventory_price": None,
+            },
+            "price_review": {
+                "comparison": "not_found",
+                "difference": None,
+                "needs_review": True,
+                "message": "Inventory item was not found; review required.",
             },
             "quotation": {
                 "unit_price": None,
@@ -258,6 +269,23 @@ def quote_line_item(customer: Optional[dict], quotation_date: date, item: dict):
         rate_card_id = None
 
     amount = round(final_unit_price * quantity, 2) if final_unit_price is not None else None
+    if card and card_rate is not None:
+        if card_rate < inventory_price:
+            comparison = "lower"
+            review_message = "Customer rate card is lower than inventory price; flag for review."
+        elif card_rate > inventory_price:
+            comparison = "higher"
+            review_message = "Customer rate card is higher than inventory price; flag for review."
+        else:
+            comparison = "same"
+            review_message = "Customer rate card matches inventory price."
+        price_difference = round(abs(card_rate - inventory_price), 2)
+        needs_review = card_rate != inventory_price
+    else:
+        comparison = "inventory_only"
+        review_message = "No active customer rate card matched; inventory price will be reviewed."
+        price_difference = None
+        needs_review = False
 
     return {
         "found": True,
@@ -268,6 +296,11 @@ def quote_line_item(customer: Optional[dict], quotation_date: date, item: dict):
         "available_quantity": available,
         "available": available >= quantity,
         "shortfall": max(0, quantity - available),
+        "inventory_review": {
+            "status": "available" if available >= quantity else "partial",
+            "needs_order": max(0, quantity - available),
+            "available_quantity": available,
+        },
         "inventory": {
             "unit_price": inventory_price,
             "currency": inventory_candidate["currency"],
@@ -281,6 +314,12 @@ def quote_line_item(customer: Optional[dict], quotation_date: date, item: dict):
             "rate": final_unit_price,
             "inventory_price": inventory_price,
             "rate_card_name": card.get("name") if source == "customer_rate_card" and card else None,
+        },
+        "price_review": {
+            "comparison": comparison,
+            "difference": price_difference,
+            "needs_review": needs_review or available < quantity,
+            "message": review_message,
         },
         "quotation": {
             "unit_price": final_unit_price,
@@ -480,6 +519,9 @@ def pricing_quote(request: QuoteRequest):
             "all_available": all(x.get("available", False) for x in quoted_items if x.get("found")),
             "priced_from_rate_card": sum(1 for x in quoted_items if x.get("pricing", {}).get("source") == "customer_rate_card"),
             "priced_from_inventory": sum(1 for x in quoted_items if x.get("pricing", {}).get("source") == "inventory"),
+            "needs_review": sum(1 for x in quoted_items if x.get("price_review", {}).get("needs_review")),
+            "inventory_short_items": sum(1 for x in quoted_items if x.get("shortfall", 0) > 0),
+            "total_shortfall": sum(x.get("shortfall", 0) for x in quoted_items),
         },
     }
 

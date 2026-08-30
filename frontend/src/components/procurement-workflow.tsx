@@ -29,8 +29,8 @@ import {
   FileSpreadsheet,
 } from "lucide-react";
 import { clsx } from "clsx";
-import { buildPricingRows, demoChemicals, formatCurrency, matchCustomer } from "@/lib/procurement-demo";
-import { uploadPurchaseOrder, type ParseOrderResponse } from "@/lib/procurement-api";
+import { demoChemicals, formatCurrency, matchCustomer } from "@/lib/procurement-demo";
+import { requestPricingQuote, uploadPurchaseOrder, type ParseOrderResponse, type PricingQuoteResponse } from "@/lib/procurement-api";
 
 type Stage = "login" | "dashboard" | "upload" | "parsing" | "review" | "pricing" | "quotation";
 
@@ -96,9 +96,9 @@ export function ProcurementWorkflow() {
   const [uploadResult, setUploadResult] = useState<ParseOrderResponse | null>(null);
   const [drafts, setDrafts] = useState<Record<string, DraftItem>>({});
   const [customerQuery, setCustomerQuery] = useState("");
-  const [pricingOverrides, setPricingOverrides] = useState<Record<string, string>>({});
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [pricingReport, setPricingReport] = useState<PricingQuoteResponse | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState(parsingSteps[0]);
   const [pricingProgress, setPricingProgress] = useState(0);
@@ -147,17 +147,11 @@ export function ProcurementWorkflow() {
   }, [hydrated, recentOrders]);
 
   const currentCustomer = useMemo(() => matchCustomer(customerQuery), [customerQuery]);
-  const pricingPreview = useMemo(
-    () => buildPricingRows(uploadResult?.data.items ?? [], customerQuery, pricingOverrides),
-    [customerQuery, pricingOverrides, uploadResult?.data.items]
-  );
+  const pricingPreview = useMemo(() => pricingReport?.items ?? [], [pricingReport]);
   const totals = useMemo(() => {
-    const subtotal = pricingPreview.rows.reduce(
-      (sum, row, index) => sum + row.finalPrice * Number(drafts[uploadResult?.data.items[index]?.item_name ?? ""]?.quantity || 0),
-      0
-    );
+    const subtotal = pricingPreview.reduce((sum, row) => sum + Number(row.quotation.amount ?? 0), 0);
     return { subtotal };
-  }, [drafts, pricingPreview.rows, uploadResult?.data.items]);
+  }, [pricingPreview]);
 
   const activeStep = stageIndex(stage);
 
@@ -166,7 +160,7 @@ export function ProcurementWorkflow() {
     setUploadResult(null);
     setDrafts({});
     setCustomerQuery("");
-    setPricingOverrides({});
+    setPricingReport(null);
     setProgress(0);
     setProgressLabel(parsingSteps[0]);
     setPricingProgress(0);
@@ -264,13 +258,20 @@ export function ProcurementWorkflow() {
       await sleep(220);
     }
 
-    const nextOverrides = Object.fromEntries(
-      pricingPreview.rows.map((row) => [row.itemName, row.finalPrice.toString()])
-    );
-    setPricingOverrides(nextOverrides);
+    const customerName = currentCustomer?.customer.name ?? customerQuery ?? uploadResult.data.issuing_authority ?? uploadResult.data.vendor_name ?? "";
+    const quoteItems = uploadResult.data.items
+      .map((item) => ({
+        sku: null,
+        item_name: drafts[item.item_name]?.mapped_chemical || item.item_name,
+        quantity: Number(drafts[item.item_name]?.quantity ?? item.quantity ?? 0),
+      }))
+      .filter((item) => item.quantity > 0);
+
+    const quote = await requestPricingQuote(customerName, new Date().toISOString().slice(0, 10), quoteItems);
+    setPricingReport(quote);
     setPricingBusy(false);
     setStage("pricing");
-    setNotice("Pricing review ready. Customer rate card applied where available.");
+    setNotice("Pricing review ready. Prices are flagged only; no price was overwritten.");
   };
 
   const generateQuotation = async () => {
@@ -512,10 +513,8 @@ export function ProcurementWorkflow() {
                   <PricingPane
                     customerQuery={customerQuery}
                     customerMatch={currentCustomer}
-                    drafts={drafts}
                     pricingPreview={pricingPreview}
-                    pricingOverrides={pricingOverrides}
-                    setPricingOverrides={setPricingOverrides}
+                    pricingReport={pricingReport}
                     onGenerateQuotation={generateQuotation}
                     pricingBusy={pricingBusy}
                     totals={totals}
@@ -530,6 +529,7 @@ export function ProcurementWorkflow() {
                     customerMatch={currentCustomer}
                     drafts={drafts}
                     pricingPreview={pricingPreview}
+                    pricingReport={pricingReport}
                     totals={totals}
                     onPrint={handlePrint}
                     onNewOrder={() => setStage("upload")}
@@ -877,32 +877,30 @@ function ItemEditor({
 function PricingPane({
   customerQuery,
   customerMatch,
-  drafts,
   pricingPreview,
-  pricingOverrides,
-  setPricingOverrides,
+  pricingReport,
   onGenerateQuotation,
   pricingBusy,
   totals,
 }: {
   customerQuery: string;
   customerMatch: ReturnType<typeof matchCustomer>;
-  drafts: Record<string, DraftItem>;
-  pricingPreview: ReturnType<typeof buildPricingRows>;
-  pricingOverrides: Record<string, string>;
-  setPricingOverrides: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  pricingPreview: PricingQuoteResponse["items"];
+  pricingReport: PricingQuoteResponse | null;
   onGenerateQuotation: () => Promise<void>;
   pricingBusy: boolean;
   totals: { subtotal: number };
 }) {
   const customer = customerMatch?.customer;
+  const priceFlags = pricingPreview.filter((row) => row.price_review.needs_review);
+  const shortages = pricingPreview.filter((row) => row.shortfall > 0);
   return (
     <div className="space-y-5">
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_420px]">
         <div className="rounded-[1.75rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Pricing review</p>
-          <h3 className="mt-3 text-2xl font-semibold text-slate-950">Transparent rate selection before quotation</h3>
-          <p className="mt-2 text-sm leading-6 text-slate-600">Inventory price stays visible. If a customer rate card matches, the final rate is highlighted before the quotation is generated.</p>
+          <h3 className="mt-3 text-2xl font-semibold text-slate-950">Review-only pricing and stock check</h3>
+          <p className="mt-2 text-sm leading-6 text-slate-600">The system only flags differences. It does not rewrite prices here. It also shows shortages and the quantity that needs to be ordered.</p>
           <div className="mt-5 grid gap-4 md:grid-cols-3">
             <Tile label="Customer" value={customer?.name ?? (customerQuery || "Unassigned")} />
             <Tile label="Rate Card" value={customer?.rateCardId ?? "Not linked"} />
@@ -911,52 +909,70 @@ function PricingPane({
         </div>
 
         <div className="rounded-[1.75rem] border border-stone-200/80 bg-[#0f172a] p-5 text-white shadow-[0_20px_70px_rgba(15,23,42,0.14)]">
-          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Pricing source</p>
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Review summary</p>
           <div className="mt-4 space-y-3 text-sm text-slate-300">
-            <LegendItem tone="teal" label="Customer rate card" description="Used when the customer has a valid card match for the item." />
-            <LegendItem tone="slate" label="Inventory price" description="Used as the fallback when no customer override exists." />
+            <LegendItem tone="teal" label="Price lower than inventory" description="Flag the row, but do not auto-adjust the price." />
+            <LegendItem tone="slate" label="Price higher than inventory" description="Flag the row, but keep the original value visible." />
+            <LegendItem tone="teal" label="Inventory shortage" description="Flag the missing quantity so procurement can order it." />
           </div>
         </div>
       </div>
 
+      <div className="grid gap-4 md:grid-cols-3">
+        <Tile label="Rows flagged for review" value={String(priceFlags.length)} />
+        <Tile label="Rows with shortage" value={String(shortages.length)} />
+        <Tile label="Units short" value={String(pricingReport?.summary.total_shortfall ?? 0)} />
+      </div>
+
       <div className="space-y-4">
-        {pricingPreview.rows.map((row) => (
-          <div key={row.lineItemId} className="rounded-[1.5rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
+        {pricingPreview.filter(Boolean).map((row, index) => {
+          const inventoryPrice = row.inventory?.unit_price ?? null;
+          const reviewedQuote = row.quotation?.unit_price ?? null;
+          const rateCardPrice = row.pricing?.rate ?? null;
+          return (
+          <div key={`${row.sku ?? row.item_name}-${index}`} className="rounded-[1.5rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{row.source === "customer_rate_card" ? "Customer rate card" : "Inventory price"}</p>
-                <h3 className="mt-2 text-lg font-semibold text-slate-950">{row.itemName}</h3>
+                <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">{row.price_review.comparison === "lower" ? "Rate card lower than inventory" : row.price_review.comparison === "higher" ? "Rate card higher than inventory" : row.price_review.comparison === "same" ? "Rate card matches inventory" : row.price_review.comparison === "inventory_only" ? "Inventory price only" : "Review required"}</p>
+                <h3 className="mt-2 text-lg font-semibold text-slate-950">{row.item_name}</h3>
               </div>
-              <div className={clsx("rounded-full px-3 py-1 text-xs font-semibold", row.source === "customer_rate_card" ? "bg-teal-50 text-teal-800" : "bg-stone-100 text-slate-700")}>
-                {row.source === "customer_rate_card" ? "Card match" : "Fallback"}
+              <div className={clsx("rounded-full px-3 py-1 text-xs font-semibold", row.price_review.needs_review ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-800")}>
+                {row.price_review.needs_review ? "Review flag" : "No flag"}
               </div>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-4">
-              <Tile label="Inventory price" value={formatCurrency(row.inventoryPrice)} />
-              <Tile label="Rate card price" value={row.rateCardPrice === null ? "—" : formatCurrency(row.rateCardPrice)} />
-              <Tile label="Final rate" value={formatCurrency(Number(pricingOverrides[row.itemName] ?? row.finalPrice))} />
-              <Tile label="Qty" value={String(Number(drafts[row.itemName]?.quantity ?? 0) || 0)} />
+              <Tile label="Inventory price" value={inventoryPrice === null ? "—" : formatCurrency(inventoryPrice)} />
+              <Tile label="Rate card price" value={rateCardPrice === null ? "—" : formatCurrency(rateCardPrice)} />
+              <Tile label="Reviewed quote" value={reviewedQuote === null ? "—" : formatCurrency(reviewedQuote)} />
+              <Tile label="Qty" value={String(row.requested_quantity)} />
             </div>
 
-            <div className="mt-4">
-              <Field label="Editable final rate">
-                <input value={pricingOverrides[row.itemName] ?? row.finalPrice.toString()} onChange={(event) => setPricingOverrides((previous) => ({ ...previous, [row.itemName]: event.target.value }))} className="w-full rounded-2xl border border-stone-200 bg-white px-4 py-3 text-sm text-slate-900 outline-none transition focus:border-teal-400" />
-              </Field>
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="rounded-2xl border border-stone-200 bg-stone-50 p-4 text-sm text-slate-700">
+                <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Price review</p>
+                <p className="mt-2 leading-6">{row.price_review.message}</p>
+                {row.price_review.difference !== null && <p className="mt-2 font-medium text-slate-900">Difference: {formatCurrency(row.price_review.difference)}</p>}
+              </div>
+              <div className={clsx("rounded-2xl border p-4 text-sm", row.available ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900")}>
+                <p className="text-xs font-semibold uppercase tracking-[0.25em]">Inventory review</p>
+                <p className="mt-2 leading-6">{row.available ? "Enough inventory on hand for the requested quantity." : `Short by ${row.shortfall}. Need to order this quantity before fulfillment.`}</p>
+              </div>
             </div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
         <div className="rounded-[1.5rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Pricing notes</p>
-          <p className="mt-3 text-sm leading-6 text-slate-600">You can still change any final rate manually before generating the quotation PDF.</p>
+          <p className="mt-3 text-sm leading-6 text-slate-600">This screen is review-only. Prices are shown and flagged, but not edited here.</p>
         </div>
         <div className="rounded-[1.5rem] border border-stone-200/80 bg-[#0f172a] p-5 text-white shadow-[0_20px_70px_rgba(15,23,42,0.14)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Quoted total</p>
           <div className="mt-3 text-3xl font-semibold">{formatCurrency(totals.subtotal)}</div>
-          <p className="mt-2 text-sm text-slate-300">Based on the currently selected final rates.</p>
+          <p className="mt-2 text-sm text-slate-300">Based on the reviewed quote returned by the mock API.</p>
           <button type="button" onClick={onGenerateQuotation} className="mt-5 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-teal-500 px-4 py-3 text-sm font-semibold text-white transition hover:bg-teal-400">
             <FileDown className="h-4 w-4" /> {pricingBusy ? "Generating..." : "Generate Quotation"}
           </button>
@@ -1002,11 +1018,12 @@ const QuotationPane = forwardRef<HTMLDivElement, {
   customerQuery: string;
   customerMatch: ReturnType<typeof matchCustomer>;
   drafts: Record<string, DraftItem>;
-  pricingPreview: ReturnType<typeof buildPricingRows>;
+  pricingPreview: PricingQuoteResponse["items"];
+  pricingReport: PricingQuoteResponse | null;
   totals: { subtotal: number };
   onPrint: () => void;
   onNewOrder: () => void;
-}>(({ parseResult, customerQuery, customerMatch, drafts, pricingPreview, totals, onPrint, onNewOrder }, ref) => {
+}>(({ parseResult, customerQuery, customerMatch, drafts, pricingPreview, pricingReport, totals, onPrint, onNewOrder }, ref) => {
   const customer = customerMatch?.customer;
   return (
     <div ref={ref} className="space-y-5">
@@ -1051,15 +1068,15 @@ const QuotationPane = forwardRef<HTMLDivElement, {
                   </tr>
                 </thead>
                 <tbody>
-                  {pricingPreview.rows.map((row, index) => {
-                    const quantity = Number(drafts[row.lineItemId]?.quantity ?? 0) || 0;
-                    const amount = quantity * Number(row.finalPrice);
+                  {pricingPreview.map((row, index) => {
+                    const quantity = Number(drafts[row.item_name]?.quantity ?? 0) || 0;
+                    const amount = Number(row.quotation.amount ?? quantity * Number(row.quotation.unit_price ?? 0));
                     return (
-                      <tr key={row.lineItemId} className="border-t border-stone-200">
+                      <tr key={`${row.sku ?? row.item_name}-${index}`} className="border-t border-stone-200">
                         <td className="px-4 py-3">{index + 1}</td>
-                        <td className="px-4 py-3">{row.itemName}</td>
+                        <td className="px-4 py-3">{row.item_name}</td>
                         <td className="px-4 py-3">{quantity}</td>
-                        <td className="px-4 py-3">{formatCurrency(row.finalPrice)}</td>
+                        <td className="px-4 py-3">{formatCurrency(row.quotation.unit_price)}</td>
                         <td className="px-4 py-3">{formatCurrency(amount)}</td>
                       </tr>
                     );
@@ -1074,16 +1091,18 @@ const QuotationPane = forwardRef<HTMLDivElement, {
               <div className="mt-4 space-y-3 text-sm text-slate-600">
                 <SummaryRow label="Customer" value={customer?.name ?? (customerQuery || parseResult.data.issuing_authority || "Unassigned")} />
                 <SummaryRow label="Order" value={parseResult.filename} />
-                <SummaryRow label="Items" value={String(pricingPreview.rows.length)} />
+                <SummaryRow label="Items" value={String(pricingPreview.length)} />
                 <SummaryRow label="Subtotal" value={formatCurrency(totals.subtotal)} />
+                <SummaryRow label="Items short" value={String(pricingReport?.summary.inventory_short_items ?? 0)} />
+                <SummaryRow label="Needs review" value={String(pricingReport?.summary.needs_review ?? 0)} />
               </div>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-[#0f172a] p-4 text-white">
               <p className="text-xs font-semibold uppercase tracking-[0.25em] text-teal-200/80">Pricing source</p>
               <div className="mt-4 space-y-2 text-sm text-slate-300">
-                <div>• Customer rate card when matched</div>
-                <div>• Inventory fallback when no card exists</div>
-                <div>• Manual editable preview before print</div>
+                <div>• Customer rate card is compared against inventory and flagged when different</div>
+                <div>• Shortages are shown with the quantity that needs to be ordered</div>
+                <div>• No prices are changed in this screen</div>
               </div>
             </div>
             <div className="rounded-2xl border border-stone-200 bg-white p-4 text-sm text-slate-600">

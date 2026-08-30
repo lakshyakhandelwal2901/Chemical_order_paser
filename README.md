@@ -23,25 +23,25 @@ For every **PDF**, it tries a local parse first, for free, with no API call:
    doesn't block using the locally-parsed items.
 
 Any PDF that fails step 1 or doesn't clear the confidence bar in step 3, and
-every **image** (no text layer to parse, and these forms are often handwritten
-Hindi where OCR alone isn't reliable), falls back to Gemini, which reads the
-page like a person would.
+every **image** (no text layer to parse), falls back to OCR.space. The OCR
+response is requested with table overlay data, then routed back into the same
+table parser so the result still becomes structured order data.
 
 Every parse result carries a `source` field (`"local_pdf_parse"` or
-`"ai_fallback"`) so you can see which path handled each document — useful for
+`"ocr_space"`) so you can see which path handled each document — useful for
 tracking how much of your volume is being resolved for free.
 
 **Tested against real documents:** of 3 sample PDFs from a working set, 1 was
 a genuinely digital PO — parsed locally, all 9 line items + vendor/PO#/date
 extracted correctly with zero API calls. The other 2 were scans with no text
-layer at all and correctly fell straight through to AI.
+layer at all and were routed through OCR.space.
 
 ## Setup
 
 ```bash
 npm install
 cp .env.example .env
-# edit .env and paste your GOOGLE_API_KEY if you want Gemini fallback for scans/images
+# edit .env and paste your OCR_SPACE_API_KEY if you want OCR.space fallback for scans/images
 npm start
 ```
 
@@ -125,9 +125,9 @@ Same as `/api/parse-orders/quote`, but returns a downloadable PDF quotation inst
   mapping from x-positions, row parsing (with wrapped-line merging), confidence scoring.
 - `headerMetadata.js` — best-effort regex extraction of vendor/PO#/date/issuing authority
   from the text above the table.
-- `extract.js` — `parseOrder()` orchestrates local-first-then-AI per file; `extractOrderFromFile()`
-  is the AI path itself (builds the Gemini request — PDF or image bytes sent as inline data)
-  with the extraction schema/prompt, retry-with-backoff, and JSON validation.
+- `extract.js` — `parseOrder()` orchestrates local-first-then-OCR.space per file;
+  `extractOrderFromFile()` is the OCR path itself (uploads the PDF/image to OCR.space,
+  converts the overlay text back into the table parser input shape, and validates the JSON-like result).
 - `normalize.js` — flattens parsed orders into one `what / quantity / price` row-per-item
   table (`flattenOrders`, now includes `parsed_by`) and turns that into CSV (`rowsToCsv`).
 - `server.js` — Express routes wiring it together, with bounded concurrency for batches.
@@ -145,6 +145,8 @@ Same as `/api/parse-orders/quote`, but returns a downloadable PDF quotation inst
 - Rate-limit/server errors (`429`/`500`/`529`) are retried with exponential backoff automatically.
 - Swap `GEMINI_MODEL` in `.env` if you want to pin a specific model version.
 - Set `BUSYNOTIFY_API_BASE_URL` in `.env` if the inventory service is not running at `http://127.0.0.1:8000`.
+- Set `OCR_SPACE_API_KEY` in `.env` for your own OCR.space key. If it is missing,
+  the backend uses the public demo key `helloworld`, which may be rate limited.
 - If you start seeing local parses with wrong numbers on a new document layout, that means
   its header labels didn't match `CATEGORY_PATTERNS` in `tableParser.js` the way you'd
   expect — add the label variant you're seeing there rather than trusting the output blindly.

@@ -24,11 +24,81 @@ export type ParsedOrderData = {
 export type ParseOrderResponse = {
   filename: string;
   success: boolean;
-  source: "local_pdf_parse" | "ai_fallback";
+  source: "local_pdf_parse" | "ocr_space";
   data: ParsedOrderData;
 };
 
-const parserBaseUrl = process.env.NEXT_PUBLIC_PARSER_API_BASE_URL ?? "/api/parser";
+export type QuoteRequestItem = {
+  sku?: string | null;
+  item_name?: string | null;
+  quantity: number;
+};
+
+export type PricingQuoteResponse = {
+  customer: {
+    customer_id: string;
+    canonical_name: string;
+    [key: string]: unknown;
+  } | null;
+  customer_match: {
+    found: boolean;
+    match_score: number | null;
+    match_method: string | null;
+  };
+  quotation_date: string;
+  items: Array<{
+    found: boolean;
+    sku: string | null;
+    item_name: string;
+    match_score: number | null;
+    requested_quantity: number;
+    available_quantity: number;
+    available: boolean;
+    shortfall: number;
+    inventory_review?: {
+      status: "available" | "partial" | "not_found";
+      needs_order: number;
+      available_quantity: number;
+    };
+    inventory: {
+      unit_price: number | null;
+      currency: string | null;
+      pack_size: string | null;
+      unit: string | null;
+    };
+    pricing: {
+      source: "customer_rate_card" | "inventory" | "not_found";
+      rate_card_id: string | null;
+      rate_card_sku: string | null;
+      rate: number | null;
+      inventory_price: number | null;
+      rate_card_name: string | null;
+    };
+    price_review: {
+      comparison: "lower" | "higher" | "same" | "inventory_only" | "not_found";
+      difference: number | null;
+      needs_review: boolean;
+      message: string;
+    };
+    quotation: {
+      unit_price: number | null;
+      amount: number | null;
+      currency: string | null;
+    };
+  }>;
+  summary: {
+    item_count: number;
+    all_available: boolean;
+    priced_from_rate_card: number;
+    priced_from_inventory: number;
+    needs_review: number;
+    inventory_short_items: number;
+    total_shortfall: number;
+  };
+};
+
+const parserBaseUrl = process.env.NEXT_PUBLIC_PARSER_API_BASE_URL ?? "http://127.0.0.1:3001/api";
+const busyNotifyBaseUrl = process.env.NEXT_PUBLIC_BUSYNOTIFY_API_BASE_URL ?? "/api/busynotify";
 
 async function parseJson<T>(response: Response): Promise<T> {
   if (!response.ok) {
@@ -50,4 +120,20 @@ export async function uploadPurchaseOrder(file: File, clientId: string): Promise
   });
 
   return parseJson<ParseOrderResponse>(response);
+}
+
+export async function requestPricingQuote(
+  customerName: string,
+  quotationDate: string,
+  items: QuoteRequestItem[]
+): Promise<PricingQuoteResponse> {
+  const response = await fetch(`${busyNotifyBaseUrl}/v1/pricing/quote`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ customer_name: customerName, quotation_date: quotationDate, items }),
+  });
+
+  return parseJson<PricingQuoteResponse>(response);
 }
