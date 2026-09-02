@@ -150,3 +150,22 @@ Same as `/api/parse-orders/quote`, but returns a downloadable PDF quotation inst
 - If you start seeing local parses with wrong numbers on a new document layout, that means
   its header labels didn't match `CATEGORY_PATTERNS` in `tableParser.js` the way you'd
   expect — add the label variant you're seeing there rather than trusting the output blindly.
+
+
+# how to run 
+
+everything would be ran in its own terminal window 
+
+backend 
+  - (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& "d:\vs code\claude scraper\.venv\Scripts\Activate.ps1")
+  - (.venv) PS D:\vs code\claude scraper> npm start
+
+frontend
+  - PS D:\vs code\claude scraper> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& "d:\vs code\claude scraper\.venv\Scripts\Activate.ps1")
+  - (.venv) PS D:\vs code\claude scraper> set-Location 'd:\vs code\claude scraper\frontend'
+  - (.venv) PS D:\vs code\claude scraper\frontend> npm run dev
+
+busyNotify api 
+   # set terminal for its own repo  ' cd "D:\vs code\busyNotify_mock_api" '
+  - PS D:\vs code\busyNotify_mock_api> (Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned) ; (& "d:\vs code\busyNotify_mock_api\.venv\Scripts\Activate.ps1")
+  - (.venv) PS D:\vs code\busyNotify_mock_api> uvicorn main:app --reload --port 8000
