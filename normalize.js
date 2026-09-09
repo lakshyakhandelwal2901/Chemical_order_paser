@@ -16,7 +16,7 @@ export function flattenOrders(parsedOrders) {
     for (const item of data.items) {
       rows.push({
         source_file: filename,
-        parsed_by: source ?? null, // "local_pdf_parse" or "ocr_space"
+        parsed_by: source ?? null, // "local_pdf_parse", "azure_document_intelligence", or "ocr_space"
         document_type: data.document_type ?? null,
         issuing_authority: data.issuing_authority ?? null,
         vendor_name: data.vendor_name ?? null,

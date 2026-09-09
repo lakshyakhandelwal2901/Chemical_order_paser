@@ -1,12 +1,12 @@
 # Order Parser Backend
 
 Extracts `item name / quantity / price` (plus vendor, order no., date, issuing authority)
-from purchase orders, supply orders, indents, and rate contracts — PDF or image, any layout,
-Hindi/English/handwritten — into one consistent JSON/CSV shape.
+from purchase orders, supply orders, indents, rate contracts, quotations, and spreadsheet-style
+order sheets — PDF, image, DOCX, XLSX, CSV, or TXT — into one consistent JSON/CSV shape.
 
 ## How parsing decides local vs. AI
 
-For every **PDF**, it tries a local parse first, for free, with no API call:
+For every **PDF**, **DOCX**, **XLSX**, **CSV**, or **TXT** file, it tries a local parse first, for free, with no API call:
 
 1. Check if the PDF has a real text layer (`pdfTextExtract.js`). Many government
    documents are actually scans/photocopies saved as PDF — those have **zero**
@@ -23,13 +23,24 @@ For every **PDF**, it tries a local parse first, for free, with no API call:
    doesn't block using the locally-parsed items.
 
 Any PDF that fails step 1 or doesn't clear the confidence bar in step 3, and
-every **image** (no text layer to parse), falls back to OCR.space. The OCR
-response is requested with table overlay data, then routed back into the same
-table parser so the result still becomes structured order data.
+every **image** (no text layer to parse), falls back to Azure Document
+Intelligence. DOCX files with only embedded images also use the OCR path after
+the text extractor finds no table. The Azure response is requested with the
+`prebuilt-layout` model, then routed back into the same table parser so the
+result still becomes structured order data. If Azure is not configured, the
+code falls back to OCR.space for compatibility.
 
-Every parse result carries a `source` field (`"local_pdf_parse"` or
-`"ocr_space"`) so you can see which path handled each document — useful for
-tracking how much of your volume is being resolved for free.
+Azure Document Intelligence is the preferred fallback when you set
+`AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT` and `AZURE_DOCUMENT_INTELLIGENCE_KEY`.
+The parser sends the file to the `prebuilt-layout` model, polls for the
+analysis result, and then routes Azure's OCR text back into the same table
+parser. If those Azure variables are missing, the code still falls back to
+OCR.space for compatibility.
+
+Every parse result carries a `source` field (`"local_pdf_parse"`,
+`"azure_document_intelligence"`, or `"ocr_space"`) so you can see which path
+handled each document — useful for tracking how much of your volume is being
+resolved for free.
 
 **Tested against real documents:** of 3 sample PDFs from a working set, 1 was
 a genuinely digital PO — parsed locally, all 9 line items + vendor/PO#/date
@@ -41,9 +52,26 @@ layer at all and were routed through OCR.space.
 ```bash
 npm install
 cp .env.example .env
-# edit .env and paste your OCR_SPACE_API_KEY if you want OCR.space fallback for scans/images
+# edit .env and paste your AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY
+# optionally add OCR_SPACE_API_KEY if you want the legacy OCR.space compatibility fallback
 npm start
 ```
+
+## Azure setup
+
+1. Create an **Azure AI Document Intelligence** resource in the Azure portal.
+2. Open the resource and copy the **Endpoint** and one of the **Keys** from
+  **Keys and Endpoint**.
+3. Add these to your `.env` file:
+
+```bash
+AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT=https://<your-resource-name>.cognitiveservices.azure.com/
+AZURE_DOCUMENT_INTELLIGENCE_KEY=<your-key>
+```
+
+4. Restart the backend.
+5. Upload a scanned PDF, image, or image-only DOCX. The local PDF parser still
+  runs first for digital PDFs; Azure only handles the fallback path.
 
 Server runs on `http://localhost:3001` by default.
 
@@ -87,6 +115,14 @@ Response:
 }
 ```
 
+### `POST /api/parse-quotation`
+Single-file quotation intake with the same multipart shape and parsed response as `/api/parse-order`.
+
+```bash
+curl -X POST http://localhost:3001/api/parse-quotation \
+  -F "file=@quotation.pdf"
+```
+
 ### `POST /api/parse-orders`
 Batch. Field name `files` (repeat for each file, up to 25). Returns per-file results
 **and** a flattened `flat_items` array — every line item from every order in one table,
@@ -125,9 +161,10 @@ Same as `/api/parse-orders/quote`, but returns a downloadable PDF quotation inst
   mapping from x-positions, row parsing (with wrapped-line merging), confidence scoring.
 - `headerMetadata.js` — best-effort regex extraction of vendor/PO#/date/issuing authority
   from the text above the table.
-- `extract.js` — `parseOrder()` orchestrates local-first-then-OCR.space per file;
-  `extractOrderFromFile()` is the OCR path itself (uploads the PDF/image to OCR.space,
-  converts the overlay text back into the table parser input shape, and validates the JSON-like result).
+- `extract.js` — `parseOrder()` orchestrates local-first-then-Azure OCR per file;
+  `extractOrderFromFile()` uses Azure Document Intelligence when configured,
+  otherwise OCR.space, and converts the OCR/table output back into the table
+  parser input shape before validating the result.
 - `normalize.js` — flattens parsed orders into one `what / quantity / price` row-per-item
   table (`flattenOrders`, now includes `parsed_by`) and turns that into CSV (`rowsToCsv`).
 - `server.js` — Express routes wiring it together, with bounded concurrency for batches.

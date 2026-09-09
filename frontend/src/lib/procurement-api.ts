@@ -24,7 +24,7 @@ export type ParsedOrderData = {
 export type ParseOrderResponse = {
   filename: string;
   success: boolean;
-  source: "local_pdf_parse" | "ocr_space";
+  source: "local_pdf_parse" | "azure_document_intelligence" | "ocr_space";
   data: ParsedOrderData;
 };
 
@@ -32,6 +32,47 @@ export type QuoteRequestItem = {
   sku?: string | null;
   item_name?: string | null;
   quantity: number;
+};
+
+export type PricingQuoteItem = {
+  found: boolean;
+  sku: string | null;
+  item_name: string;
+  match_score: number | null;
+  requested_quantity: number;
+  available_quantity: number;
+  available: boolean;
+  shortfall: number;
+  inventory_review: {
+    status: "available" | "partial" | "out_of_stock" | "not_found";
+    needs_order: number;
+    available_quantity: number;
+  };
+  inventory: {
+    unit_price: number | null;
+    currency: string | null;
+    pack_size: string | null;
+    unit: string | null;
+  } | null;
+  pricing: {
+    source: "customer_rate_card" | "inventory" | "not_found";
+    rate_card_id: string | null;
+    rate_card_sku: string | null;
+    rate: number | null;
+    inventory_price: number | null;
+    rate_card_name: string | null;
+  };
+  price_review: {
+    comparison: "lower" | "higher" | "same" | "inventory_only" | "not_found";
+    difference: number | null;
+    needs_review: boolean;
+    message: string;
+  };
+  quotation: {
+    unit_price: number | null;
+    amount: number | null;
+    currency: string | null;
+  };
 };
 
 export type PricingQuoteResponse = {
@@ -46,46 +87,7 @@ export type PricingQuoteResponse = {
     match_method: string | null;
   };
   quotation_date: string;
-  items: Array<{
-    found: boolean;
-    sku: string | null;
-    item_name: string;
-    match_score: number | null;
-    requested_quantity: number;
-    available_quantity: number;
-    available: boolean;
-    shortfall: number;
-    inventory_review?: {
-      status: "available" | "partial" | "not_found";
-      needs_order: number;
-      available_quantity: number;
-    };
-    inventory: {
-      unit_price: number | null;
-      currency: string | null;
-      pack_size: string | null;
-      unit: string | null;
-    };
-    pricing: {
-      source: "customer_rate_card" | "inventory" | "not_found";
-      rate_card_id: string | null;
-      rate_card_sku: string | null;
-      rate: number | null;
-      inventory_price: number | null;
-      rate_card_name: string | null;
-    };
-    price_review: {
-      comparison: "lower" | "higher" | "same" | "inventory_only" | "not_found";
-      difference: number | null;
-      needs_review: boolean;
-      message: string;
-    };
-    quotation: {
-      unit_price: number | null;
-      amount: number | null;
-      currency: string | null;
-    };
-  }>;
+  items: PricingQuoteItem[];
   summary: {
     item_count: number;
     all_available: boolean;
@@ -95,6 +97,24 @@ export type PricingQuoteResponse = {
     inventory_short_items: number;
     total_shortfall: number;
   };
+};
+
+export type CustomerResolveResponse = {
+  found: boolean;
+  match_score: number | null;
+  match_method: string | null;
+  quotation_date: string;
+  customer: {
+    customer_id: string;
+    canonical_name: string;
+    [key: string]: unknown;
+  } | null;
+  active_rate_card: {
+    rate_card_id: string;
+    customer_id?: string | null;
+    [key: string]: unknown;
+  } | null;
+  rate_card_source: string | null;
 };
 
 const parserBaseUrl = process.env.NEXT_PUBLIC_PARSER_API_BASE_URL ?? "http://127.0.0.1:3001/api";
@@ -122,6 +142,19 @@ export async function uploadPurchaseOrder(file: File, clientId: string): Promise
   return parseJson<ParseOrderResponse>(response);
 }
 
+export async function uploadQuotationDocument(file: File, clientId: string): Promise<ParseOrderResponse> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("client_id", clientId);
+
+  const response = await fetch(`${parserBaseUrl}/parse-quotation`, {
+    method: "POST",
+    body: formData,
+  });
+
+  return parseJson<ParseOrderResponse>(response);
+}
+
 export async function requestPricingQuote(
   customerName: string,
   quotationDate: string,
@@ -136,4 +169,16 @@ export async function requestPricingQuote(
   });
 
   return parseJson<PricingQuoteResponse>(response);
+}
+
+export async function resolveBusyCustomer(customerName: string, quotationDate: string): Promise<CustomerResolveResponse> {
+  const response = await fetch(`${busyNotifyBaseUrl}/v1/customers/resolve`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ customer_name: customerName, quotation_date: quotationDate }),
+  });
+
+  return parseJson<CustomerResolveResponse>(response);
 }

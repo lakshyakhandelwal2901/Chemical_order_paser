@@ -8,3 +8,9 @@ busyNotify_mock_api/.venv/
 busyNotify_mock_api/__pycache__/
 *.log
 .DS_Store
+
+# Large sample documents (test data, not source)
+Price_list_sample/
+Rate_card_sample/
+order_sample_input/
+quotation_sample_input/

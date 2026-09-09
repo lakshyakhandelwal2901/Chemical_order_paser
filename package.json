@@ -1,7 +1,7 @@
 {
   "name": "order-parser-backend",
   "version": "1.0.0",
-  "description": "Extracts vendor, items, quantities and prices from PDF/image purchase orders of any layout using Gemini.",
+  "description": "Extracts vendor, items, quantities and prices from PDF, image, DOCX, XLSX and text-based purchase orders using local parsing and OCR.space.",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -13,8 +13,11 @@
     "cors": "^2.8.5",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "jszip": "^3.10.1",
+    "mammoth": "^1.12.2",
     "multer": "^1.4.5-lts.1",
     "pdfjs-dist": "^4.6.82",
-    "pdfkit": "^0.19.1"
+    "pdfkit": "^0.19.1",
+    "xlsx": "^0.18.5"
   }
 }
