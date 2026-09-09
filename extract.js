@@ -5,9 +5,6 @@ import { extractPdfLines, hasTextLayer } from "./pdfTextExtract.js";
 import { parseItemTable } from "./tableParser.js";
 import { extractHeaderMetadata } from "./headerMetadata.js";
 
-const AZURE_DOCUMENT_INTELLIGENCE_API_VERSION = "2024-11-30";
-const AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID = "prebuilt-layout";
-
 const OCR_SPACE_ENDPOINT = "https://api.ocr.space/parse/image";
 const OCR_SPACE_DEMO_KEY = "helloworld";
 
@@ -59,21 +56,6 @@ function isPdfFile(file) {
   const header = file.buffer?.subarray?.(0, 4)?.toString("ascii") ?? "";
   return header === "%PDF";
 }
-
-function getAzureDocumentIntelligenceEndpoint() {
-  const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || process.env.DI_ENDPOINT || "";
-  return endpoint.trim();
-}
-
-function getAzureDocumentIntelligenceKey() {
-  const key = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY || process.env.DI_KEY || "";
-  return key.trim();
-}
-
-function hasAzureDocumentIntelligenceConfig() {
-  return Boolean(getAzureDocumentIntelligenceEndpoint() && getAzureDocumentIntelligenceKey());
-}
-
 function getOcrSpaceApiKey() {
   return process.env.OCR_SPACE_API_KEY || process.env.OCRSPACE_API_KEY || OCR_SPACE_DEMO_KEY;
 }
@@ -108,70 +90,8 @@ function buildOcrSpaceFormData(file) {
   return formData;
 }
 
-function normalizeAzureEndpoint(endpoint) {
-  return String(endpoint || "").replace(/\/+$/, "");
-}
-
-function azurePagesToLines(pages) {
-  const lines = [];
-  for (const page of pages || []) {
-    for (const line of page?.lines || []) {
-      const words = Array.isArray(line?.words) ? line.words : [];
-      const items = words
-        .map((word) => ({
-          text: String(word?.content ?? "").trim(),
-          x: Array.isArray(word?.polygon) && word.polygon.length > 0 ? Number(word.polygon[0] ?? 0) : 0,
-        }))
-        .filter((item) => item.text.length > 0)
-        .sort((a, b) => a.x - b.x);
-
-      if (items.length > 0) {
-        lines.push({ items });
-        continue;
-      }
-
-      const content = String(line?.content ?? "").trim();
-      if (content) {
-        lines.push({ items: [{ text: content, x: 0 }] });
-      }
-    }
-  }
-
-  return lines;
-}
-
-function azureTablesToLines(tables) {
-  const rowsByTable = [];
-
-  for (const table of tables || []) {
-    const rows = new Map();
-
-    for (const cell of table?.cells || []) {
-      const rowIndex = Number(cell?.rowIndex ?? 0);
-      const columnIndex = Number(cell?.columnIndex ?? 0);
-      const text = String(cell?.content ?? "").trim();
-      if (!text) continue;
-
-      if (!rows.has(rowIndex)) {
-        rows.set(rowIndex, []);
-      }
-
-      rows.get(rowIndex).push({ text, x: columnIndex * 100 });
-    }
-
-    const orderedRows = Array.from(rows.entries())
-      .sort((a, b) => a[0] - b[0])
-      .map(([, items]) => ({ items: items.sort((a, b) => a.x - b.x) }))
-      .filter((row) => row.items.length > 0);
-
-    rowsByTable.push(...orderedRows);
-  }
-
-  return rowsByTable;
-}
-
 function normalizeOverlayLines(pageLines) {
-  const fragments = [];
+  const result = [];
   for (const line of pageLines || []) {
     const words = Array.isArray(line?.Words) ? line.Words : [];
     const items = words
@@ -181,37 +101,11 @@ function normalizeOverlayLines(pageLines) {
       }))
       .filter((item) => item.text.length > 0)
       .sort((a, b) => a.x - b.x);
-
     if (items.length > 0) {
-      fragments.push({
-        top: Number(line?.MinTop ?? items[0].x ?? 0),
-        items,
-      });
+      result.push({ items });
     }
   }
-
-  fragments.sort((a, b) => a.top - b.top || a.items[0].x - b.items[0].x);
-
-  const grouped = [];
-  const rowThreshold = 25;
-
-  for (const fragment of fragments) {
-    const lastRow = grouped[grouped.length - 1];
-    if (lastRow && Math.abs(fragment.top - lastRow.top) <= rowThreshold) {
-      lastRow.items.push(...fragment.items);
-      lastRow.top = Math.min(lastRow.top, fragment.top);
-      continue;
-    }
-
-    grouped.push({
-      top: fragment.top,
-      items: [...fragment.items],
-    });
-  }
-
-  return grouped
-    .map((row) => ({ items: row.items.sort((a, b) => a.x - b.x) }))
-    .filter((line) => line.items.length > 0);
+  return result;
 }
 
 function parsedTextLineToItems(lineText) {
@@ -313,17 +207,11 @@ async function extractDocxImageFallback(file) {
 
     const imageBuffer = await entry.async("nodebuffer");
     try {
-      const embeddedFile = {
+      return await extractOrderFromOcrSpace({
         buffer: imageBuffer,
         mimetype: imageMimeType,
         originalname: entry.name.split("/").pop() || file.originalname || "embedded-image",
-      };
-
-      if (hasAzureDocumentIntelligenceConfig()) {
-        return await extractOrderFromAzureDocumentIntelligence(embeddedFile);
-      }
-
-      return await extractOrderFromOcrSpace(embeddedFile);
+      });
     } catch (error) {
       lastError = error;
     }
@@ -464,12 +352,6 @@ async function tryLocalDocumentParse(file) {
 function ocrResultsToLines(parsedResults) {
   const lines = [];
   for (const pageResult of parsedResults || []) {
-    const overlayLines = normalizeOverlayLines(pageResult?.TextOverlay?.Lines);
-    if (overlayLines.length > 0) {
-      lines.push(...overlayLines);
-      continue;
-    }
-
     const parsedText = String(pageResult?.ParsedText ?? "").trim();
     if (parsedText) {
       for (const rawLine of parsedText.split(/\r?\n/)) {
@@ -478,6 +360,12 @@ function ocrResultsToLines(parsedResults) {
           lines.push({ items });
         }
       }
+      continue;
+    }
+
+    const overlayLines = normalizeOverlayLines(pageResult?.TextOverlay?.Lines);
+    if (overlayLines.length > 0) {
+      lines.push(...overlayLines);
     }
   }
   return lines;
@@ -501,94 +389,6 @@ async function withRetry(fn, { retries = 2, baseDelayMs = 1200 } = {}) {
   }
 
   throw lastError;
-}
-
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function pollAzureDocumentIntelligence(operationUrl) {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const response = await fetch(operationUrl, {
-      headers: {
-        "Ocp-Apim-Subscription-Key": getAzureDocumentIntelligenceKey(),
-      },
-    });
-
-    if (!response.ok) {
-      const message = await response.text().catch(() => "");
-      throw new Error(`Azure Document Intelligence poll failed with status ${response.status}. ${message}`.trim());
-    }
-
-    const payload = await response.json();
-    const status = String(payload?.status ?? "").toLowerCase();
-    if (status === "succeeded") {
-      return payload;
-    }
-
-    if (status === "failed") {
-      throw new Error(payload?.error?.message || "Azure Document Intelligence failed to process the document.");
-    }
-
-    await sleep(1000);
-  }
-
-  throw new Error("Azure Document Intelligence did not complete within the polling window.");
-}
-
-async function extractOrderFromAzureDocumentIntelligence(file) {
-  const endpoint = normalizeAzureEndpoint(getAzureDocumentIntelligenceEndpoint());
-  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/${AZURE_DOCUMENT_INTELLIGENCE_MODEL_ID}:analyze?api-version=${AZURE_DOCUMENT_INTELLIGENCE_API_VERSION}`;
-
-  const response = await fetch(analyzeUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/octet-stream",
-      "Ocp-Apim-Subscription-Key": getAzureDocumentIntelligenceKey(),
-    },
-    body: file.buffer,
-  });
-
-  if (response.status !== 202) {
-    const message = await response.text().catch(() => "");
-    throw new Error(`Azure Document Intelligence analyze failed with status ${response.status}. ${message}`.trim());
-  }
-
-  const operationLocation = response.headers.get("operation-location") || response.headers.get("Operation-Location");
-  if (!operationLocation) {
-    throw new Error("Azure Document Intelligence did not return an operation-location header.");
-  }
-
-  const payload = await pollAzureDocumentIntelligence(operationLocation);
-  const analyzeResult = payload?.analyzeResult || {};
-  const tables = analyzeResult?.tables || [];
-  const pages = analyzeResult?.pages || [];
-  const lines = tables.length > 0 ? azureTablesToLines(tables) : azurePagesToLines(pages);
-  const { items, confidence, headerLine } = parseItemTable(lines);
-  if (items.length === 0) {
-    throw new Error("Azure Document Intelligence returned text, but no item table could be detected.");
-  }
-
-  const metadata = extractHeaderMetadata(lines, headerLine);
-  const notes = confidence === "high"
-    ? "Parsed via Azure Document Intelligence OCR fallback."
-    : `Parsed via Azure Document Intelligence OCR fallback with ${confidence} confidence; please review extracted rows.`;
-
-  return finalizeParsedOrder(
-    {
-      document_type: "unknown",
-      issuing_authority: metadata.issuing_authority,
-      vendor_name: metadata.vendor_name,
-      order_number: metadata.order_number,
-      order_date: metadata.order_date,
-      reference_number: null,
-      currency: "INR",
-      items,
-      total_amount: null,
-      notes,
-    },
-    notes
-  );
 }
 
 function finalizeParsedOrder(parsed, notes) {
@@ -666,15 +466,11 @@ async function extractOrderFromOcrSpace(file) {
 
 /**
  * Extracts structured order data from a single uploaded file (PDF or image)
- * using Azure Document Intelligence for the fallback path.
+ * using OCR.space for the fallback path.
  * @param {{ buffer: Buffer, mimetype: string, originalname: string }} file
  * @returns {Promise<object>} parsed order JSON
  */
 export async function extractOrderFromFile(file) {
-  if (hasAzureDocumentIntelligenceConfig()) {
-    return extractOrderFromAzureDocumentIntelligence(file);
-  }
-
   return extractOrderFromOcrSpace(file);
 }
 
@@ -739,11 +535,6 @@ export async function parseOrder(file) {
   if (isLocalDocumentFile(file)) {
     const local = await tryLocalDocumentParse(file);
     if (local) return { source: "local_pdf_parse", data: local };
-  }
-
-  if (hasAzureDocumentIntelligenceConfig()) {
-    const data = await extractOrderFromAzureDocumentIntelligence(file);
-    return { source: "azure_document_intelligence", data };
   }
 
   const data = await extractOrderFromOcrSpace(file);

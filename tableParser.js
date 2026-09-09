@@ -125,6 +125,54 @@ function emptyRow() {
   return { item_name: "", specification: "", quantity: null, quantity_unit: null, unit_rate: null, amount: null };
 }
 
+function isExpectedSerial(text, expectedSerial) {
+  const circledDigits = "①②③④⑤⑥⑦⑧⑨⑩";
+  const normalized = text
+    .trim()
+    .replace(/[()[\]{}]/g, "")
+    .replace(/[①②③④⑤⑥⑦⑧⑨⑩]/g, (character) => String(circledDigits.indexOf(character) + 1));
+  return new RegExp(`^${expectedSerial}\\.?$`).test(normalized);
+}
+
+function getNumberedRow(text) {
+  const circledDigits = "①②③④⑤⑥⑦⑧⑨⑩";
+  const trimmed = text.trim();
+  const circledIndex = [...circledDigits].findIndex((character) => trimmed.startsWith(character));
+  if (circledIndex >= 0) {
+    return { number: circledIndex + 1, remainder: trimmed.slice(1).trim() };
+  }
+
+  const match = trimmed.match(/^\(?([1-9]\d*)\)?[.)]?\s*(.*)$/);
+  return match ? { number: Number(match[1]), remainder: match[2].trim() } : null;
+}
+
+function parseNumberedRequest(lines) {
+  const rows = [];
+
+  for (const line of lines) {
+    const text = line.items.map((item) => item.text).join(" ").trim();
+    const numberedRow = getNumberedRow(text);
+    if (!numberedRow) continue;
+
+    const rowText = numberedRow.remainder;
+    const [itemText, quantityText] = rowText.split(/\s*=\s*/, 2);
+    const quantityMatch = quantityText?.match(/-?\d+(?:\.\d+)?/);
+    const fallbackNumber = [...rowText.matchAll(/-?\d+(?:\.\d+)?/g)].pop()?.[0];
+    const quantity = quantityMatch ? Number(quantityMatch[0]) : fallbackNumber ? Number(fallbackNumber) : null;
+    const itemName = (quantityText ? itemText : rowText.replace(/-?\d+(?:\.\d+)?(?:\s*(?:g|gm|kg|ml|l|pcs?|boxes?|vials?|cans?))?\s*$/i, "")).replace(/[=:]+\s*$/, "").trim();
+    if (itemName.length < 2) continue;
+
+    rows.push({
+      ...emptyRow(),
+      item_name: itemName,
+      quantity,
+      quantity_unit: quantityText?.replace(/-?\d+(?:\.\d+)?/, "").replace(/[()=:]/g, "").trim() || null,
+    });
+  }
+
+  return rows;
+}
+
 /**
  * Parses table rows starting after the header line, stopping at the first
  * footer marker (totals/remarks/terms/signature block). Handles item names
@@ -143,7 +191,7 @@ function parseRows(lines, headerLine, cols) {
     if (FOOTER_MARKERS.test(lineText)) break;
 
     const firstText = (line.items[0]?.text ?? "").trim();
-    const isRowStart = new RegExp(`^${expectedSerial}\\.?$`).test(firstText);
+    const isRowStart = isExpectedSerial(firstText, expectedSerial);
 
     if (isRowStart) {
       if (currentRow) rows.push(currentRow);
@@ -195,4 +243,9 @@ export function parseItemTable(lines) {
   const confidence = scoreConfidence(rows);
 
   return { items: rows, confidence, headerLine };
+}
+
+export function parseHandwrittenRequest(lines) {
+  const items = parseNumberedRequest(lines);
+  return { items, confidence: items.length > 0 ? "medium" : "none", headerLine: null };
 }
