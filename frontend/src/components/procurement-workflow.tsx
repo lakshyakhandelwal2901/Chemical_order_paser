@@ -24,14 +24,15 @@ import {
   UploadCloud,
   Users,
   Wallet,
+  X,
   LayoutDashboard,
   FileSpreadsheet,
 } from "lucide-react";
 import { clsx } from "clsx";
 import { demoChemicals, formatCurrency, matchCustomer } from "@/lib/procurement-demo";
-import { requestPricingQuote, resolveBusyCustomer, uploadPurchaseOrder, uploadQuotationDocument, type CustomerResolveResponse, type ParseOrderResponse, type PricingQuoteItem, type PricingQuoteResponse } from "@/lib/procurement-api";
+import { requestPricingQuote, uploadPurchaseOrder, uploadQuotationDocument, type ParseOrderResponse, type PricingQuoteResponse } from "@/lib/procurement-api";
 
-type Stage = "login" | "dashboard" | "upload" | "parsing" | "review" | "quotation";
+type Stage = "login" | "dashboard" | "upload" | "parsing" | "review" | "pricing" | "quotation";
 type DocumentMode = "order" | "quotation";
 
 type User = { email: string; name: string };
@@ -52,20 +53,7 @@ type DraftItem = {
 
 type RecentOrder = { file: string; customer: string; status: string; total: string; timestamp: string };
 
-type CustomerMatchView = {
-  found: boolean;
-  matchScore: number | null;
-  matchMethod: string | null;
-  quotationDate: string;
-  customer: {
-    name: string;
-    rateCardId: string | null;
-    validFrom: string | null;
-    validTo: string | null;
-  } | null;
-};
-
-const stageOrder: Stage[] = ["login", "dashboard", "upload", "review", "quotation"];
+const stageOrder: Stage[] = ["login", "dashboard", "upload", "review", "pricing", "quotation"];
 const parsingStepsByMode: Record<DocumentMode, string[]> = {
   order: ["Upload received", "Document analyzed", "Order table detected", "Items extracted", "Fields ready for review"],
   quotation: ["Upload received", "Document analyzed", "Quotation table detected", "Items extracted", "Fields ready for review"],
@@ -116,12 +104,12 @@ export function ProcurementWorkflow() {
   const [recentOrders, setRecentOrders] = useState<RecentOrder[]>([]);
   const [hydrated, setHydrated] = useState(false);
   const [pricingReport, setPricingReport] = useState<PricingQuoteResponse | null>(null);
-  const [resolvedCustomer, setResolvedCustomer] = useState<CustomerResolveResponse | null>(null);
   const [progress, setProgress] = useState(0);
   const [progressLabel, setProgressLabel] = useState(parsingStepsByMode.order[0]);
+  const [pricingProgress, setPricingProgress] = useState(0);
+  const [pricingLabel, setPricingLabel] = useState(pricingSteps[0]);
   const [busy, setBusy] = useState(false);
   const [pricingBusy, setPricingBusy] = useState(false);
-  const [customerResolveBusy, setCustomerResolveBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement | null>(null);
@@ -164,82 +152,7 @@ export function ProcurementWorkflow() {
     window.localStorage.setItem("busyNotify:recent-orders", JSON.stringify(recentOrders));
   }, [hydrated, recentOrders]);
 
-  useEffect(() => {
-    if (!uploadResult) {
-      return () => {
-        setResolvedCustomer(null);
-        setCustomerResolveBusy(false);
-      };
-    }
-
-    const customerName = customerQuery.trim() || uploadResult.data.issuing_authority || uploadResult.data.vendor_name || "";
-    if (!customerName.trim()) {
-      return () => {
-        setResolvedCustomer(null);
-        setCustomerResolveBusy(false);
-      };
-    }
-
-    let cancelled = false;
-    const timer = window.setTimeout(async () => {
-      setCustomerResolveBusy(true);
-      try {
-        const resolved = await resolveBusyCustomer(customerName, new Date().toISOString().slice(0, 10));
-        if (!cancelled) {
-          setResolvedCustomer(resolved);
-        }
-      } catch {
-        if (!cancelled) {
-          setResolvedCustomer(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setCustomerResolveBusy(false);
-        }
-      }
-    }, 250);
-
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timer);
-    };
-  }, [customerQuery, uploadResult]);
-
-  const currentCustomer = useMemo<CustomerMatchView | null>(() => {
-    if (resolvedCustomer?.found && resolvedCustomer.customer) {
-      return {
-        found: true,
-        matchScore: resolvedCustomer.match_score,
-        matchMethod: resolvedCustomer.match_method,
-        quotationDate: resolvedCustomer.quotation_date,
-        customer: {
-          name: resolvedCustomer.customer.canonical_name,
-          rateCardId: (resolvedCustomer.customer as { rate_card_id?: string | null }).rate_card_id ?? resolvedCustomer.active_rate_card?.rate_card_id ?? null,
-          validFrom: (resolvedCustomer.active_rate_card as { valid_from?: string | null } | null)?.valid_from ?? null,
-          validTo: (resolvedCustomer.active_rate_card as { valid_to?: string | null } | null)?.valid_to ?? null,
-        },
-      };
-    }
-
-    const localCustomerMatch = matchCustomer(customerQuery);
-    if (localCustomerMatch) {
-      return {
-        found: true,
-        matchScore: localCustomerMatch.score,
-        matchMethod: localCustomerMatch.source,
-        quotationDate: new Date().toISOString().slice(0, 10),
-        customer: {
-          name: localCustomerMatch.customer.name,
-          rateCardId: localCustomerMatch.customer.rateCardId,
-          validFrom: localCustomerMatch.customer.validFrom,
-          validTo: localCustomerMatch.customer.validTo,
-        },
-      };
-    }
-
-    return null;
-  }, [customerQuery, resolvedCustomer]);
-
+  const currentCustomer = useMemo(() => matchCustomer(customerQuery), [customerQuery]);
   const pricingPreview = useMemo(() => pricingReport?.items ?? [], [pricingReport]);
   const totals = useMemo(() => {
     const subtotal = pricingPreview.reduce((sum, row) => sum + Number(row.quotation.amount ?? 0), 0);
@@ -255,12 +168,12 @@ export function ProcurementWorkflow() {
     setCustomerQuery("");
     setDocumentMode("order");
     setPricingReport(null);
-    setResolvedCustomer(null);
     setProgress(0);
     setProgressLabel(parsingStepsByMode.order[0]);
+    setPricingProgress(0);
+    setPricingLabel(pricingSteps[0]);
     setBusy(false);
     setPricingBusy(false);
-    setCustomerResolveBusy(false);
     setNotice(null);
     setError(null);
     setStage(user ? "dashboard" : "login");
@@ -320,7 +233,6 @@ export function ProcurementWorkflow() {
       setUploadResult(parsed);
       setDrafts(initialDrafts(parsed.data));
       setCustomerQuery(parsed.data.issuing_authority ?? parsed.data.vendor_name ?? "");
-      setResolvedCustomer(null);
       setProgress(100);
       setNotice(`Extracted ${parsed.data.items.length} items from the ${documentMode} document. Review every field before pricing.`);
       setStage("review");
@@ -343,12 +255,17 @@ export function ProcurementWorkflow() {
     if (!uploadResult) return;
 
     setPricingBusy(true);
+    setStage("pricing");
+    setPricingProgress(10);
+    setPricingLabel(pricingSteps[0]);
 
     for (let index = 0; index < pricingSteps.length; index += 1) {
+      setPricingLabel(pricingSteps[index]);
+      setPricingProgress(Math.min(100, 14 + (index + 1) * 16));
       await sleep(220);
     }
 
-    const customerName = currentCustomer?.customer?.name ?? customerQuery ?? uploadResult.data.issuing_authority ?? uploadResult.data.vendor_name ?? "";
+    const customerName = currentCustomer?.customer.name ?? customerQuery ?? uploadResult.data.issuing_authority ?? uploadResult.data.vendor_name ?? "";
     const quoteItems = uploadResult.data.items
       .map((item) => ({
         sku: null,
@@ -360,8 +277,10 @@ export function ProcurementWorkflow() {
     try {
       const quote = await requestPricingQuote(customerName, new Date().toISOString().slice(0, 10), quoteItems);
       setPricingReport(quote);
+      setStage("pricing");
       setNotice("Pricing review ready. Prices are flagged only; no price was overwritten.");
     } catch (pricingError) {
+      setStage("review");
       setError(pricingError instanceof Error ? pricingError.message : "Pricing review failed. Please retry after checking the backend.");
     } finally {
       setPricingBusy(false);
@@ -378,7 +297,7 @@ export function ProcurementWorkflow() {
       printRef.current.scrollIntoView({ behavior: "smooth", block: "start" });
     }
 
-    const customer = currentCustomer?.customer?.name ?? uploadResult.data.issuing_authority ?? uploadResult.data.vendor_name ?? "Unassigned customer";
+    const customer = currentCustomer?.customer.name ?? uploadResult.data.issuing_authority ?? uploadResult.data.vendor_name ?? "Unassigned customer";
     const total = formatCurrency(totals.subtotal);
     setRecentOrders((previous) => [
       {
@@ -593,11 +512,21 @@ export function ProcurementWorkflow() {
                     onApprove={approveAndContinue}
                     itemsNeedingReview={itemsNeedingReview}
                     selectedCount={selectedCount}
-                    customerResolveBusy={customerResolveBusy}
+                  />
+                )}
+
+                {stage === "pricing" && uploadResult && !pricingReport && (
+                  <ProgressPane title="Preparing Quotation" subtitle="Customer lookup, rate-card matching, and pricing review are running now." progress={pricingProgress} activeLabel={pricingLabel} steps={pricingSteps} fileName={selectedFile?.name ?? uploadResult.filename} />
+                )}
+
+                {stage === "pricing" && uploadResult && pricingReport && (
+                  <PricingPane
+                    customerQuery={customerQuery}
+                    customerMatch={currentCustomer}
                     pricingPreview={pricingPreview}
                     pricingReport={pricingReport}
-                    pricingBusy={pricingBusy}
                     onGenerateQuotation={generateQuotation}
+                    pricingBusy={pricingBusy}
                     totals={totals}
                   />
                 )}
@@ -608,6 +537,7 @@ export function ProcurementWorkflow() {
                     parseResult={uploadResult}
                     customerQuery={customerQuery}
                     customerMatch={currentCustomer}
+                    drafts={drafts}
                     pricingPreview={pricingPreview}
                     pricingReport={pricingReport}
                     totals={totals}
@@ -783,12 +713,6 @@ function ReviewPane({
   onApprove,
   itemsNeedingReview,
   selectedCount,
-  customerResolveBusy,
-  pricingPreview,
-  pricingReport,
-  pricingBusy,
-  onGenerateQuotation,
-  totals,
 }: {
   parseResult: ParseOrderResponse;
   customerQuery: string;
@@ -799,12 +723,6 @@ function ReviewPane({
   onApprove: () => Promise<void>;
   itemsNeedingReview: number;
   selectedCount: number;
-  customerResolveBusy: boolean;
-  pricingPreview: PricingQuoteResponse["items"];
-  pricingReport: PricingQuoteResponse | null;
-  pricingBusy: boolean;
-  onGenerateQuotation: () => Promise<void>;
-  totals: { subtotal: number };
 }) {
   const [expandedItem, setExpandedItem] = useState<string | null>(parseResult.data.items[0]?.item_name ?? null);
   const customerMatch = matchCustomer(customerQuery);
@@ -815,7 +733,7 @@ function ReviewPane({
         <div className="rounded-[1.25rem] border border-stone-200/80 bg-white/80 p-3 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Review Order</p>
           <h2 className="mt-1.5 text-lg font-semibold tracking-tight text-slate-950 sm:text-xl">Step 2/3</h2>
-          <p className="mt-1 text-sm text-slate-600">Check the parser output and pricing on the same page before approval.</p>
+          <p className="mt-1 text-sm text-slate-600">Inspect and edit only the row you need before pricing begins.</p>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <Tile label="Source file" value={parseResult.filename} />
             <Tile label="Parser source" value={parseResult.source} />
@@ -836,11 +754,9 @@ function ReviewPane({
           <div className="mt-2.5 rounded-2xl border border-white/10 bg-white/5 p-3 text-sm text-slate-300">
             <div className="flex items-center gap-2 text-white"><BadgeCheck className="h-4 w-4 text-teal-300" /> Match status</div>
             <p className="mt-2.5 leading-6">
-              {customerResolveBusy
-                ? "Resolving customer through Busy..."
-                : customerMatch
-                  ? `${customerMatch.customer.name} matched via ${customerMatch.source} lookup (${Math.round(customerMatch.score * 100)}%).`
-                  : "No customer match yet. Type a customer name to continue."}
+              {customerMatch
+                ? `${customerMatch.customer.name} matched via ${customerMatch.source} lookup (${Math.round(customerMatch.score * 100)}%).`
+                : "No customer match yet. Type a customer name to continue."}
             </p>
           </div>
           <div className="mt-2.5 grid grid-cols-3 gap-2.5">
@@ -851,67 +767,47 @@ function ReviewPane({
         </div>
       </div>
 
-      {pricingBusy && (
-        <div className="rounded-[1rem] border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          Pricing review is running on this same page. The row values will fill in as soon as the quote returns.
-        </div>
-      )}
-
       <div className="overflow-hidden rounded-[1.1rem] border border-stone-200/80 bg-white/80 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
-        <div className="hidden xl:grid xl:grid-cols-[minmax(0,1.55fr)_92px_92px_92px_68px_90px_140px_104px_96px] xl:gap-2 border-b border-stone-200 bg-stone-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">
+        <div className="hidden border-b border-stone-200 bg-stone-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:grid xl:grid-cols-[minmax(0,1fr)_68px_104px_96px] xl:gap-2">
           <span>Line item</span>
-          <span>Inventory price</span>
-          <span>Rate card price</span>
-          <span>Reviewed quote</span>
           <span>Qty</span>
-          <span>Difference</span>
-          <span>Inventory review</span>
           <span>Status</span>
           <span>Actions</span>
         </div>
         <div className="space-y-1 p-1.5">
-          {parseResult.data.items.map((item, index) => (
-            <ItemEditor
-              key={`${item.item_name}-${index}`}
-              index={index + 1}
-              item={item}
-              draft={drafts[item.item_name]}
-              pricingRow={pricingPreview[index]}
-              isExpanded={expandedItem === item.item_name}
-              onToggleExpanded={() => setExpandedItem((previous) => (previous === item.item_name ? null : item.item_name))}
-              onChange={(patch) =>
-                setDrafts((previous) => ({
-                  ...previous,
-                  [item.item_name]: { ...previous[item.item_name], ...patch },
-                }))
-              }
-            />
-          ))}
+        {parseResult.data.items.map((item, index) => (
+          <ItemEditor
+            key={`${item.item_name}-${index}`}
+            index={index + 1}
+            item={item}
+            draft={drafts[item.item_name]}
+            isExpanded={expandedItem === item.item_name}
+            onToggleExpanded={() => setExpandedItem((previous) => (previous === item.item_name ? null : item.item_name))}
+            onChange={(patch) =>
+              setDrafts((previous) => ({
+                ...previous,
+                [item.item_name]: { ...previous[item.item_name], ...patch },
+              }))
+            }
+          />
+        ))}
         </div>
       </div>
-
-      <PricingPane
-        pricingPreview={pricingPreview}
-        pricingReport={pricingReport}
-        pricingBusy={pricingBusy}
-        onGenerateQuotation={onGenerateQuotation}
-        totals={totals}
-      />
 
       <div className="grid gap-2.5 xl:grid-cols-[minmax(0,1fr)_300px]">
         <div className="rounded-[1.25rem] border border-stone-200/80 bg-white/80 p-3 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Review checkpoint</p>
-          <p className="mt-1.5 text-sm leading-6 text-slate-600">Confirm the extracted fields before generating the final quotation.</p>
+          <p className="mt-1.5 text-sm leading-6 text-slate-600">Confirm the extracted fields before pricing or quotation generation.</p>
         </div>
         <div className="rounded-[1.25rem] border border-stone-200/80 bg-[#0f172a] p-3 text-white shadow-[0_16px_50px_rgba(15,23,42,0.14)]">
           <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Workflow action</p>
-          <h3 className="mt-1.5 text-lg font-semibold">Approve once the parser result looks right.</h3>
+          <h3 className="mt-1.5 text-lg font-semibold">Approve only after the review is clean.</h3>
           <div className="mt-3.5 flex flex-col gap-2.5">
             <button type="button" onClick={() => onSaveDrafts(drafts)} className="inline-flex items-center justify-center gap-2 rounded-2xl border border-white/15 bg-white/10 px-4 py-2 text-sm font-semibold transition hover:bg-white/15">
               <Edit3 className="h-4 w-4" /> Save Draft
             </button>
             <button type="button" onClick={onApprove} className="inline-flex items-center justify-center gap-2 rounded-2xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-400">
-              <ArrowRight className="h-4 w-4" /> Approve &amp; Check Pricing
+              <ArrowRight className="h-4 w-4" /> Approve &amp; Continue
             </button>
           </div>
         </div>
@@ -924,7 +820,6 @@ function ItemEditor({
   index,
   item,
   draft,
-  pricingRow,
   isExpanded,
   onToggleExpanded,
   onChange,
@@ -932,81 +827,41 @@ function ItemEditor({
   index: number;
   item: ParseOrderResponse["data"]["items"][number];
   draft: DraftItem;
-  pricingRow?: PricingQuoteResponse["items"][number];
   isExpanded: boolean;
   onToggleExpanded: () => void;
   onChange: (patch: Partial<DraftItem>) => void;
 }) {
   const [query, setQuery] = useState(() => draft?.mapped_chemical ?? item.item_name);
   const matches = demoChemicals.filter((chemical) => chemical.toLowerCase().includes(query.toLowerCase())).slice(0, 6);
-  const inventoryPrice = pricingRow?.inventory?.unit_price ?? null;
-  const reviewedQuote = pricingRow?.quotation?.unit_price ?? null;
-  const rateCardPrice = pricingRow?.pricing?.rate ?? null;
-  const differenceValue = pricingRow?.price_review.difference ?? null;
-  const shortfall = Number(pricingRow?.shortfall ?? 0);
 
   return (
-    <div className="overflow-hidden rounded-[1.05rem] border border-stone-200/80 bg-white/80 shadow-[0_14px_40px_rgba(15,23,42,0.07)]">
-      <div className="grid gap-2 px-3 py-2.5 xl:grid-cols-[minmax(0,1.55fr)_92px_92px_92px_68px_90px_140px_104px_96px] xl:items-center">
+    <div className="rounded-[1.05rem] border border-stone-200/80 bg-white/80 p-2.5 shadow-[0_14px_40px_rgba(15,23,42,0.07)]">
+      <button type="button" onClick={onToggleExpanded} className="grid w-full gap-2 text-left xl:grid-cols-[minmax(0,1fr)_68px_104px_96px] xl:items-center">
         <div className="min-w-0">
           <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">Line item {index}</p>
-          <h3 className="mt-0.5 truncate text-[14px] font-semibold leading-tight text-slate-950">{draft?.mapped_chemical ?? item.item_name}</h3>
-          <p className="mt-0.5 text-[10px] text-slate-500">{item.pack_size || item.quantity_unit || "-"}</p>
+          <h3 className="mt-0.5 text-[15px] font-semibold leading-tight text-slate-950">{draft?.mapped_chemical ?? item.item_name}</h3>
+          <p className="mt-1 text-[10px] text-slate-500">{item.pack_size || item.quantity_unit || "-"}</p>
         </div>
-
-        <div className="xl:text-right">
-          <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Inventory price</p>
-          <p className="text-sm font-semibold text-slate-950">{inventoryPrice === null ? "—" : formatCurrency(inventoryPrice)}</p>
-        </div>
-
-        <div className="xl:text-right">
-          <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Rate card price</p>
-          <p className="text-sm font-semibold text-slate-950">{rateCardPrice === null ? "—" : formatCurrency(rateCardPrice)}</p>
-        </div>
-
-        <div className="xl:text-right">
-          <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Reviewed quote</p>
-          <p className="text-sm font-semibold text-slate-950">{reviewedQuote === null ? "—" : formatCurrency(reviewedQuote)}</p>
-        </div>
-
         <div className="xl:text-right">
           <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Qty</p>
           <p className="text-sm font-semibold text-slate-950">{draft?.quantity ?? item.quantity?.toString() ?? "-"}</p>
           <p className="text-[10px] text-slate-500">{item.quantity_unit || "Numbers"}</p>
         </div>
-
-        <div className="xl:text-right">
-          <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Difference</p>
-          {differenceValue === null ? (
-            <p className="text-sm font-semibold text-slate-500">—</p>
-          ) : (
-            <div className="space-y-1 xl:items-end xl:flex xl:flex-col">
-              <p className={clsx("text-sm font-semibold", pricingRow?.price_review.comparison === "higher" ? "text-emerald-700" : "text-rose-600")}>{formatCurrency(Math.abs(differenceValue))}</p>
-              <span className={clsx("inline-flex rounded-full px-2 py-0.5 text-[10px] font-semibold", pricingRow?.price_review.comparison === "lower" ? "bg-rose-50 text-rose-700" : pricingRow?.price_review.comparison === "higher" ? "bg-emerald-50 text-emerald-700" : "bg-stone-100 text-slate-600")}>{pricingRow?.price_review.comparison === "lower" ? "Lower" : pricingRow?.price_review.comparison === "higher" ? "Higher" : "Same"}</span>
-            </div>
-          )}
+        <div className="xl:text-center">
+          <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Status</p>
+          <span className={clsx("inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[10px] font-semibold", draft?.status === "confirmed" ? "border-emerald-200 bg-emerald-50 text-emerald-800" : draft?.status === "rejected" ? "border-rose-200 bg-rose-50 text-rose-800" : "border-amber-200 bg-amber-50 text-amber-800")}>
+            {draft?.status === "confirmed" ? <CheckCircle2 className="h-3 w-3" /> : draft?.status === "rejected" ? <X className="h-3 w-3" /> : <Clock3 className="h-3 w-3" />}
+            {draft?.status === "confirmed" ? "Confirmed" : draft?.status === "rejected" ? "Rejected" : "Review"}
+          </span>
         </div>
-
-        <div className={clsx("inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-semibold", pricingRow?.available ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800") }>
-          {pricingRow ? (pricingRow.available ? "Enough inventory" : shortfall > 0 ? `Short by ${shortfall}` : "Review inventory") : "—"}
+        <div className="flex items-center justify-end gap-2 xl:justify-end">
+          <span className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Review</span>
+          <span className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-stone-200 bg-stone-50 text-slate-500">{isExpanded ? <ChevronDown className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}</span>
         </div>
-
-        <div className={clsx("inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-semibold", draft?.status === "confirmed" ? "bg-emerald-50 text-emerald-700" : draft?.status === "rejected" ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-800") }>
-          {draft?.status === "confirmed" ? "Confirmed" : draft?.status === "rejected" ? "Rejected" : "Needs review"}
-        </div>
-
-        <div className="flex items-center justify-end gap-2">
-          <button type="button" onClick={onToggleExpanded} className="inline-flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-stone-50">
-            Review
-          </button>
-          <button type="button" onClick={onToggleExpanded} className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-stone-200 bg-stone-50 text-slate-500">
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}
-          </button>
-        </div>
-      </div>
+      </button>
 
       {isExpanded && (
-        <div className="border-t border-stone-200 px-3 py-3">
+        <div className="mt-2.5 space-y-2.5 border-t border-stone-200 pt-2.5">
           <div className="grid gap-2 md:grid-cols-4 xl:grid-cols-6">
             <Field label="Item Name">
               <input value={draft?.item_name ?? item.item_name} onChange={(event) => onChange({ item_name: event.target.value })} className="w-full rounded-2xl border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-slate-900 outline-none transition focus:border-teal-400" />
@@ -1022,7 +877,7 @@ function ItemEditor({
             </Field>
           </div>
 
-          <div className="mt-2 grid gap-2 xl:grid-cols-[minmax(0,1fr)_220px]">
+          <div className="grid gap-2 xl:grid-cols-[minmax(0,1fr)_220px]">
             <Field label="Map to chemical">
               <div className="relative">
                 <div className="flex items-center gap-2 rounded-2xl border border-stone-200 bg-white px-2.5 py-1.5 text-sm text-slate-900">
@@ -1065,44 +920,128 @@ function ItemEditor({
 }
 
 function PricingPane({
+  customerQuery,
+  customerMatch,
   pricingPreview,
   pricingReport,
   onGenerateQuotation,
   pricingBusy,
   totals,
 }: {
+  customerQuery: string;
+  customerMatch: ReturnType<typeof matchCustomer>;
   pricingPreview: PricingQuoteResponse["items"];
   pricingReport: PricingQuoteResponse | null;
   onGenerateQuotation: () => Promise<void>;
   pricingBusy: boolean;
   totals: { subtotal: number };
 }) {
+  const customer = customerMatch?.customer;
   const priceFlags = pricingPreview.filter((row) => row.price_review.needs_review);
   const shortages = pricingPreview.filter((row) => row.shortfall > 0);
+  const [expandedRow, setExpandedRow] = useState<string | null>(pricingPreview[0]?.item_name ?? null);
+
+  useEffect(() => {
+    setExpandedRow(pricingPreview[0]?.item_name ?? null);
+  }, [pricingPreview]);
+
   return (
-    <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
-      <div className="rounded-[1.1rem] border border-stone-200/80 bg-white/80 p-3 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Pricing summary</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          <Tile label="Rows flagged for review" value={String(priceFlags.length)} />
-          <Tile label="Rows with shortage" value={String(shortages.length)} />
-          <Tile label="Units short" value={String(pricingReport?.summary.total_shortfall ?? 0)} />
+    <div className="space-y-3">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1.1fr)_300px]">
+        <div className="rounded-[1.35rem] border border-stone-200/80 bg-white/80 p-3.5 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Pricing review</p>
+          <h3 className="mt-1.5 text-lg font-semibold text-slate-950">Review-only pricing and stock check</h3>
+          <p className="mt-1 text-sm leading-6 text-slate-600">The system only flags differences. It does not rewrite prices here.</p>
+          <div className="mt-3 grid gap-2 sm:grid-cols-3">
+            <Tile label="Customer" value={customer?.name ?? (customerQuery || "Unassigned")} />
+            <Tile label="Rate Card" value={customer?.rateCardId ?? "Not linked"} />
+            <Tile label="Valid" value={customer?.validFrom && customer?.validTo ? `${customer.validFrom} → ${customer.validTo}` : "—"} />
+          </div>
         </div>
-        <div className="mt-3 rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">What this means</p>
-          <div className="mt-2 space-y-2">
+
+        <div className="rounded-[1.35rem] border border-stone-200/80 bg-[#0f172a] p-3.5 text-white shadow-[0_16px_50px_rgba(15,23,42,0.14)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Review summary</p>
+          <div className="mt-2 space-y-2 text-sm text-slate-300">
             <LegendItem tone="teal" label="Price lower than inventory" description="Flag the row, but do not auto-adjust the price." />
             <LegendItem tone="slate" label="Price higher than inventory" description="Flag the row, but keep the original value visible." />
+            <LegendItem tone="teal" label="Inventory shortage" description="Flag the missing quantity so procurement can order it." />
           </div>
         </div>
       </div>
-      <div className="rounded-[1.1rem] border border-stone-200/80 bg-[#0f172a] p-3 text-white shadow-[0_16px_50px_rgba(15,23,42,0.14)]">
-        <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Quoted total</p>
-        <div className="mt-2 text-2xl font-semibold">{formatCurrency(totals.subtotal)}</div>
-        <p className="mt-1.5 text-sm text-slate-300">{pricingReport ? "Pricing review has been captured on this same page." : "Approve the review to calculate pricing here."}</p>
-        <button type="button" onClick={onGenerateQuotation} disabled={!pricingReport || pricingBusy} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-400 disabled:cursor-not-allowed disabled:bg-teal-500/50">
-          <FileDown className="h-4 w-4" /> {pricingBusy ? "Generating..." : "Generate Quotation"}
-        </button>
+
+      <div className="grid gap-2 sm:grid-cols-3">
+        <Tile label="Rows with price flags" value={String(priceFlags.length)} />
+        <Tile label="Rows with shortage" value={String(shortages.length)} />
+        <Tile label="Units short" value={String(pricingReport?.summary.total_shortfall ?? 0)} />
+      </div>
+
+      <div className="overflow-hidden rounded-[1.1rem] border border-stone-200/80 bg-white/80 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
+        <div className="hidden border-b border-stone-200 bg-stone-50 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:grid xl:grid-cols-[minmax(0,1.55fr)_92px_92px_92px_68px_90px_140px_104px_96px] xl:gap-2">
+          <span>Line item</span><span>Inventory price</span><span>Rate card price</span><span>Reviewed quote</span><span>Qty</span><span>Difference</span><span>Inventory review</span><span>Status</span><span>Actions</span>
+        </div>
+        <div className="space-y-1 p-1.5">
+          {pricingPreview.filter(Boolean).map((row, index) => {
+            const inventoryPrice = row.inventory?.unit_price ?? null;
+            const reviewedQuote = row.quotation?.unit_price ?? null;
+            const rateCardPrice = row.pricing?.rate ?? null;
+            const shortfall = Number(row.shortfall ?? 0);
+            const statusLabel = shortfall > 0 ? "Inventory shortage" : row.price_review.needs_review ? "Price review" : "No flag";
+            return (
+              <div key={`${row.sku ?? row.item_name}-${index}`} className="overflow-hidden rounded-[1rem] border border-stone-200/80 bg-white/80">
+                <button type="button" onClick={() => setExpandedRow((previous) => (previous === row.item_name ? null : row.item_name))} className="grid w-full gap-2 px-3 py-2.5 text-left xl:grid-cols-[minmax(0,1.55fr)_92px_92px_92px_68px_90px_140px_104px_96px] xl:items-center">
+                  <div className="min-w-0">
+                    <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500">Line item {index + 1}</p>
+                    <h3 className="mt-0.5 truncate text-[14px] font-semibold leading-tight text-slate-950">{row.item_name}</h3>
+                    <p className="mt-0.5 text-[10px] text-slate-500">{row.sku ?? "No SKU"}</p>
+                  </div>
+                  <PriceCell label="Inventory price" value={inventoryPrice} />
+                  <PriceCell label="Rate card price" value={rateCardPrice} />
+                  <PriceCell label="Reviewed quote" value={reviewedQuote} />
+                  <PriceCell label="Qty" value={row.requested_quantity} plain />
+                  <div className="xl:text-right">
+                    <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">Difference</p>
+                    <p className="text-sm font-semibold text-slate-950">{row.price_review.difference === null ? "—" : formatCurrency(row.price_review.difference)}</p>
+                    <p className="text-[10px] text-slate-500">{row.price_review.comparison}</p>
+                  </div>
+                  <div className={clsx("text-center text-[10px] font-semibold", row.available ? "text-emerald-700" : "text-amber-800")}>
+                    <p className="hidden uppercase tracking-[0.18em] xl:block">Inventory review</p>
+                    <p>{row.available ? "Available" : shortfall > 0 ? `Short by ${shortfall}` : "Not found"}</p>
+                    <p className="font-normal text-slate-500">{row.available_quantity} available</p>
+                  </div>
+                  <div className={clsx("inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[10px] font-semibold", shortfall > 0 || row.price_review.needs_review ? "bg-amber-50 text-amber-800" : "bg-emerald-50 text-emerald-700")}>{statusLabel}</div>
+                  <span className="flex items-center justify-end gap-2 text-xs font-semibold text-slate-700"><span className="hidden xl:inline">Review</span>{expandedRow === row.item_name ? <ChevronDown className="h-4 w-4" /> : <ArrowRight className="h-4 w-4" />}</span>
+                </button>
+                {expandedRow === row.item_name && (
+                  <div className="grid gap-2 border-t border-stone-200 px-3 py-3 md:grid-cols-2">
+                    <div className="rounded-2xl border border-stone-200 bg-stone-50 p-3 text-sm text-slate-700">
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em] text-slate-500">Price review</p>
+                      <p className="mt-1.5 leading-6">{row.price_review.message}</p>
+                    </div>
+                    <div className={clsx("rounded-2xl border p-3 text-sm", row.available ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-amber-200 bg-amber-50 text-amber-900")}>
+                      <p className="text-xs font-semibold uppercase tracking-[0.25em]">Inventory review</p>
+                      <p className="mt-1.5 leading-6">{row.available ? "Enough inventory on hand for the requested quantity." : shortfall > 0 ? `Short by ${shortfall}. Need to order this quantity before fulfillment.` : "Item could not be matched in inventory; review required."}</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="grid gap-2.5 lg:grid-cols-[minmax(0,1fr)_320px]">
+        <div className="rounded-[1.1rem] border border-stone-200/80 bg-white/80 p-3 shadow-[0_16px_50px_rgba(15,23,42,0.08)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-slate-500">Pricing notes</p>
+          <p className="mt-1.5 text-sm leading-6 text-slate-600">This screen is review-only. Prices are shown and flagged, but not edited here.</p>
+        </div>
+        <div className="rounded-[1.1rem] border border-stone-200/80 bg-[#0f172a] p-3 text-white shadow-[0_16px_50px_rgba(15,23,42,0.14)]">
+          <p className="text-xs font-semibold uppercase tracking-[0.3em] text-teal-200/80">Quoted total</p>
+          <div className="mt-2 text-2xl font-semibold">{formatCurrency(totals.subtotal)}</div>
+          <p className="mt-1.5 text-sm text-slate-300">Based on the reviewed quote returned by the mock API.</p>
+          <button type="button" onClick={onGenerateQuotation} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-teal-500 px-4 py-2 text-sm font-semibold text-white transition hover:bg-teal-400">
+            <FileDown className="h-4 w-4" /> {pricingBusy ? "Generating..." : "Generate Quotation"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -1125,6 +1064,13 @@ const Tile = ({ label, value }: { label: string; value: string }) => (
   </div>
 );
 
+const PriceCell = ({ label, value, plain = false }: { label: string; value: number | null; plain?: boolean }) => (
+  <div className="xl:text-right">
+    <p className="hidden text-[10px] font-semibold uppercase tracking-[0.24em] text-slate-500 xl:block">{label}</p>
+    <p className="text-sm font-semibold text-slate-950">{plain ? value : value === null ? "—" : formatCurrency(value)}</p>
+  </div>
+);
+
 const Field = ({ label, children }: { label: string; children: ReactNode }) => (
   <label className="block space-y-1.5">
     <span className="text-[10px] font-medium uppercase tracking-[0.22em] text-slate-500">{label}</span>
@@ -1142,17 +1088,15 @@ const StatChip = ({ label, value }: { label: string; value: string }) => (
 const QuotationPane = forwardRef<HTMLDivElement, {
   parseResult: ParseOrderResponse;
   customerQuery: string;
-  customerMatch: CustomerMatchView | null;
+  customerMatch: ReturnType<typeof matchCustomer>;
+  drafts: Record<string, DraftItem>;
   pricingPreview: PricingQuoteResponse["items"];
   pricingReport: PricingQuoteResponse | null;
   totals: { subtotal: number };
   onPrint: () => void;
   onNewOrder: () => void;
-}>(({ parseResult, customerQuery, customerMatch, pricingPreview, pricingReport, totals, onPrint, onNewOrder }, ref) => {
+}>(({ parseResult, customerQuery, customerMatch, drafts, pricingPreview, pricingReport, totals, onPrint, onNewOrder }, ref) => {
   const customer = customerMatch?.customer;
-  const availableProducts = pricingPreview.filter((row) => row.inventory_review.status === "available");
-  const lowInventoryProducts = pricingPreview.filter((row) => row.inventory_review.status === "partial");
-  const noInventoryProducts = pricingPreview.filter((row) => row.inventory_review.status === "out_of_stock" || row.inventory_review.status === "not_found");
   return (
     <div ref={ref} className="space-y-5">
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)] lg:flex-row lg:items-center lg:justify-between print:shadow-none">
@@ -1184,10 +1128,33 @@ const QuotationPane = forwardRef<HTMLDivElement, {
               <Tile label="Reference PO" value={parseResult.data.order_number ?? "-"} />
               <Tile label="Vendor" value={parseResult.data.vendor_name ?? "-"} />
             </div>
-            <div className="mt-5 space-y-5">
-              <QuotationInventoryTable title="Products Available" tone="available" rows={availableProducts} />
-              <QuotationInventoryTable title="Low Inventory" tone="low" rows={lowInventoryProducts} />
-              <QuotationInventoryTable title="No Inventory" tone="none" rows={noInventoryProducts} />
+            <div className="mt-5 overflow-hidden rounded-2xl border border-stone-200 bg-white">
+              <table className="w-full text-[11px] md:text-sm">
+                <thead className="bg-stone-100 text-left text-slate-600">
+                  <tr>
+                    <th className="px-2.5 py-2">#</th>
+                    <th className="px-2.5 py-2">Item</th>
+                    <th className="px-2.5 py-2">Qty</th>
+                    <th className="px-2.5 py-2">Rate</th>
+                    <th className="px-2.5 py-2">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pricingPreview.map((row, index) => {
+                    const quantity = Number(drafts[row.item_name]?.quantity ?? 0) || 0;
+                    const amount = Number(row.quotation.amount ?? quantity * Number(row.quotation.unit_price ?? 0));
+                    return (
+                      <tr key={`${row.sku ?? row.item_name}-${index}`} className="border-t border-stone-200 align-top odd:bg-stone-50/30">
+                        <td className="px-2.5 py-2">{index + 1}</td>
+                        <td className="px-2.5 py-2 leading-tight">{row.item_name}</td>
+                        <td className="px-2.5 py-2">{quantity}</td>
+                        <td className="px-2.5 py-2">{formatCurrency(row.quotation.unit_price)}</td>
+                        <td className="px-2.5 py-2">{formatCurrency(amount)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
           <div className="space-y-3">
@@ -1220,68 +1187,6 @@ const QuotationPane = forwardRef<HTMLDivElement, {
   );
 });
 QuotationPane.displayName = "QuotationPane";
-
-function QuotationInventoryTable({
-  title,
-  tone,
-  rows,
-}: {
-  title: string;
-  tone: "available" | "low" | "none";
-  rows: PricingQuoteItem[];
-}) {
-  const isAvailable = tone === "available";
-  const isLowInventory = tone === "low";
-  const emptyMessage = isAvailable ? "No products can currently be fulfilled from inventory." : isLowInventory ? "No products have partial inventory." : "No products are out of stock or missing from inventory.";
-  const headingClass = isAvailable ? "text-teal-800" : isLowInventory ? "text-amber-800" : "text-rose-800";
-
-  return (
-    <section>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <h5 className={clsx("text-sm font-semibold", headingClass)}>{title}</h5>
-        <span className="text-xs font-medium text-slate-500">{rows.length} {rows.length === 1 ? "product" : "products"}</span>
-      </div>
-      <div className="overflow-x-auto rounded-2xl border border-stone-200 bg-white">
-        <table className="min-w-full text-left text-[11px] md:text-sm">
-          <thead className="bg-stone-100 text-slate-600">
-            <tr>
-              <th className="px-2.5 py-2">#</th>
-              <th className="px-2.5 py-2">Product</th>
-              <th className="px-2.5 py-2">SKU</th>
-              <th className="px-2.5 py-2">Requested</th>
-              <th className="px-2.5 py-2">Available</th>
-              {isLowInventory && <th className="px-2.5 py-2">Shortfall</th>}
-              {isAvailable && <th className="px-2.5 py-2">Pack / Unit</th>}
-              {!isAvailable && !isLowInventory && <th className="px-2.5 py-2">Reason</th>}
-              {tone !== "none" && <th className="px-2.5 py-2">Rate</th>}
-              {tone !== "none" && <th className="px-2.5 py-2">Amount</th>}
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr className="border-t border-stone-200">
-                <td colSpan={isAvailable ? 8 : isLowInventory ? 8 : 7} className="px-2.5 py-3 text-center text-slate-500">{emptyMessage}</td>
-              </tr>
-            ) : rows.map((row, index) => (
-              <tr key={`${row.sku ?? row.item_name}-${index}`} className="border-t border-stone-200 align-top odd:bg-stone-50/30">
-                <td className="px-2.5 py-2">{index + 1}</td>
-                <td className="px-2.5 py-2 leading-tight">{row.item_name}</td>
-                <td className="px-2.5 py-2">{row.sku ?? "-"}</td>
-                <td className="px-2.5 py-2">{row.requested_quantity}</td>
-                <td className="px-2.5 py-2">{row.available_quantity}</td>
-                {isLowInventory && <td className="px-2.5 py-2 font-semibold text-amber-800">{row.shortfall}</td>}
-                {isAvailable && <td className="px-2.5 py-2">{row.inventory?.pack_size ?? row.inventory?.unit ?? "-"}</td>}
-                {!isAvailable && !isLowInventory && <td className="px-2.5 py-2">{row.inventory_review.status === "out_of_stock" ? "Out of stock" : "Not found in inventory"}</td>}
-                {tone !== "none" && <td className="px-2.5 py-2">{formatCurrency(row.quotation.unit_price)}</td>}
-                {tone !== "none" && <td className="px-2.5 py-2">{formatCurrency(row.quotation.amount)}</td>}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  );
-}
 
 const SummaryRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-1.5">
