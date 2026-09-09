@@ -1097,6 +1097,9 @@ const QuotationPane = forwardRef<HTMLDivElement, {
   onNewOrder: () => void;
 }>(({ parseResult, customerQuery, customerMatch, drafts, pricingPreview, pricingReport, totals, onPrint, onNewOrder }, ref) => {
   const customer = customerMatch?.customer;
+  const outOfStockRows = pricingPreview.filter((row) => row.available_quantity === 0);
+  const shortInventoryRows = pricingPreview.filter((row) => row.available_quantity > 0 && row.shortfall > 0);
+  const enoughInventoryRows = pricingPreview.filter((row) => row.available && row.shortfall === 0);
   return (
     <div ref={ref} className="space-y-5">
       <div className="flex flex-col gap-4 rounded-[1.75rem] border border-stone-200/80 bg-white/80 p-5 shadow-[0_20px_70px_rgba(15,23,42,0.08)] lg:flex-row lg:items-center lg:justify-between print:shadow-none">
@@ -1128,33 +1131,10 @@ const QuotationPane = forwardRef<HTMLDivElement, {
               <Tile label="Reference PO" value={parseResult.data.order_number ?? "-"} />
               <Tile label="Vendor" value={parseResult.data.vendor_name ?? "-"} />
             </div>
-            <div className="mt-5 overflow-hidden rounded-2xl border border-stone-200 bg-white">
-              <table className="w-full text-[11px] md:text-sm">
-                <thead className="bg-stone-100 text-left text-slate-600">
-                  <tr>
-                    <th className="px-2.5 py-2">#</th>
-                    <th className="px-2.5 py-2">Item</th>
-                    <th className="px-2.5 py-2">Qty</th>
-                    <th className="px-2.5 py-2">Rate</th>
-                    <th className="px-2.5 py-2">Amount</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pricingPreview.map((row, index) => {
-                    const quantity = Number(drafts[row.item_name]?.quantity ?? 0) || 0;
-                    const amount = Number(row.quotation.amount ?? quantity * Number(row.quotation.unit_price ?? 0));
-                    return (
-                      <tr key={`${row.sku ?? row.item_name}-${index}`} className="border-t border-stone-200 align-top odd:bg-stone-50/30">
-                        <td className="px-2.5 py-2">{index + 1}</td>
-                        <td className="px-2.5 py-2 leading-tight">{row.item_name}</td>
-                        <td className="px-2.5 py-2">{quantity}</td>
-                        <td className="px-2.5 py-2">{formatCurrency(row.quotation.unit_price)}</td>
-                        <td className="px-2.5 py-2">{formatCurrency(amount)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+            <div className="mt-5 space-y-4">
+              <QuotationInventoryTable title="Out of Stock" description="Items with zero available stock" rows={outOfStockRows} drafts={drafts} emptyMessage="No items are completely out of stock." />
+              <QuotationInventoryTable title="Short Inventory" description="Items with some stock, but not enough to fulfill the order" rows={shortInventoryRows} drafts={drafts} emptyMessage="No items are short on inventory." />
+              <QuotationInventoryTable title="Enough Inventory" description="Items with enough stock to fulfill the requested quantity" rows={enoughInventoryRows} drafts={drafts} emptyMessage="No items currently have enough inventory." />
             </div>
           </div>
           <div className="space-y-3">
@@ -1187,6 +1167,63 @@ const QuotationPane = forwardRef<HTMLDivElement, {
   );
 });
 QuotationPane.displayName = "QuotationPane";
+
+function QuotationInventoryTable({
+  title,
+  description,
+  rows,
+  drafts,
+  emptyMessage,
+}: {
+  title: string;
+  description: string;
+  rows: PricingQuoteResponse["items"];
+  drafts: Record<string, DraftItem>;
+  emptyMessage: string;
+}) {
+  return (
+    <section className="overflow-hidden rounded-2xl border border-stone-200 bg-white">
+      <div className="border-b border-stone-200 bg-stone-100 px-3 py-2">
+        <h5 className="text-sm font-semibold text-slate-950">{title}</h5>
+        <p className="mt-0.5 text-xs text-slate-500">{description}</p>
+      </div>
+      <table className="w-full text-[11px] md:text-sm">
+        <thead className="text-left text-slate-600">
+          <tr>
+            <th className="px-2.5 py-2">#</th>
+            <th className="px-2.5 py-2">Item</th>
+            <th className="px-2.5 py-2">Requested</th>
+            <th className="px-2.5 py-2">Available</th>
+            <th className="px-2.5 py-2">Shortfall</th>
+            <th className="px-2.5 py-2">Rate</th>
+            <th className="px-2.5 py-2">Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td colSpan={7} className="border-t border-stone-200 px-2.5 py-3 text-center text-slate-500">{emptyMessage}</td>
+            </tr>
+          ) : rows.map((row, index) => {
+            const quantity = Number(drafts[row.item_name]?.quantity ?? row.requested_quantity ?? 0) || 0;
+            const amount = Number(row.quotation.amount ?? quantity * Number(row.quotation.unit_price ?? 0));
+            return (
+              <tr key={`${row.sku ?? row.item_name}-${index}`} className="border-t border-stone-200 align-top odd:bg-stone-50/30">
+                <td className="px-2.5 py-2">{index + 1}</td>
+                <td className="px-2.5 py-2 leading-tight">{row.item_name}</td>
+                <td className="px-2.5 py-2">{quantity}</td>
+                <td className="px-2.5 py-2">{row.available_quantity}</td>
+                <td className="px-2.5 py-2">{row.shortfall}</td>
+                <td className="px-2.5 py-2">{formatCurrency(row.quotation.unit_price)}</td>
+                <td className="px-2.5 py-2">{formatCurrency(amount)}</td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </section>
+  );
+}
 
 const SummaryRow = ({ label, value }: { label: string; value: string }) => (
   <div className="flex items-center justify-between gap-3 rounded-2xl bg-white px-3 py-1.5">
