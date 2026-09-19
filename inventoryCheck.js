@@ -13,6 +13,7 @@ function toCheckItem(row) {
   return {
     item_name: row.item_name,
     quantity,
+    sku: row.sku || undefined,
   };
 }
 
@@ -54,7 +55,7 @@ export async function checkInventoryBulk(flatRows) {
   const response = await fetch(`${getBaseUrl()}/api/v1/inventory/check-bulk`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ items: items.map(({ item_name, quantity }) => ({ item_name, quantity })) }),
+    body: JSON.stringify({ items: items.map(({ item_name, quantity, sku }) => ({ item_name, quantity, sku })) }),
   });
 
   if (!response.ok) {
@@ -63,10 +64,13 @@ export async function checkInventoryBulk(flatRows) {
   }
 
   const payload = await response.json();
+  // ponytail: only source_file is a passthrough correlation token - every
+  // other field (including pack_size) should be busyNotify's own answer,
+  // not echoed back from the request. This used to overwrite the response's
+  // real pack_size with the (usually empty) input value - fixed.
   const mergedItems = payload.items.map((result, index) => ({
     ...result,
     source_file: items[index]?.source_file ?? null,
-    pack_size: items[index]?.pack_size ?? null,
   }));
 
   return {

@@ -9,7 +9,8 @@
     "stock_quantity": 42,
     "unit_price": 419.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CITR01",
@@ -21,7 +22,8 @@
     "stock_quantity": 65,
     "unit_price": 759.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "EOSC01",
@@ -33,7 +35,8 @@
     "stock_quantity": 28,
     "unit_price": 495.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "HAEC02",
@@ -45,7 +48,8 @@
     "stock_quantity": 18,
     "unit_price": 4320.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "HYDC07",
@@ -57,7 +61,8 @@
     "stock_quantity": 22,
     "unit_price": 409.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "ISOC04",
@@ -69,7 +74,8 @@
     "stock_quantity": 31,
     "unit_price": 3116.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "SODC14",
@@ -81,7 +87,8 @@
     "stock_quantity": 15,
     "unit_price": 6500.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "STAS19",
@@ -93,7 +100,8 @@
     "stock_quantity": 12,
     "unit_price": 4800.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "XYLC01",
@@ -105,7 +113,8 @@
     "stock_quantity": 19,
     "unit_price": 2239.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM001",
@@ -117,7 +126,8 @@
     "stock_quantity": 45,
     "unit_price": 420.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM002",
@@ -129,7 +139,8 @@
     "stock_quantity": 30,
     "unit_price": 316.8,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM003",
@@ -141,7 +152,8 @@
     "stock_quantity": 14,
     "unit_price": 316.8,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM004",
@@ -153,7 +165,8 @@
     "stock_quantity": 120,
     "unit_price": 69.3,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM005",
@@ -165,7 +178,8 @@
     "stock_quantity": 75,
     "unit_price": 267.3,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM006",
@@ -177,7 +191,8 @@
     "stock_quantity": 25,
     "unit_price": 1485.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM007",
@@ -189,7 +204,8 @@
     "stock_quantity": 30,
     "unit_price": 722.7,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM008",
@@ -201,7 +217,8 @@
     "stock_quantity": 40,
     "unit_price": 194.04,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM009",
@@ -213,7 +230,8 @@
     "stock_quantity": 55,
     "unit_price": 732.6,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM010",
@@ -225,7 +243,8 @@
     "stock_quantity": 100,
     "unit_price": 714.78,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM011",
@@ -237,7 +256,8 @@
     "stock_quantity": 60,
     "unit_price": 380.16,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM012",
@@ -249,7 +269,8 @@
     "stock_quantity": 20,
     "unit_price": 394.02,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM013",
@@ -261,7 +282,8 @@
     "stock_quantity": 8,
     "unit_price": 5940.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM014",
@@ -273,7 +295,8 @@
     "stock_quantity": 30,
     "unit_price": 2187.9,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM015",
@@ -285,7 +308,8 @@
     "stock_quantity": 25,
     "unit_price": 485.1,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM016",
@@ -297,7 +321,8 @@
     "stock_quantity": 8,
     "unit_price": 19988.1,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM017",
@@ -309,7 +334,8 @@
     "stock_quantity": 10,
     "unit_price": 368.28,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM018",
@@ -321,7 +347,8 @@
     "stock_quantity": 18,
     "unit_price": 396.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM019",
@@ -333,7 +360,8 @@
     "stock_quantity": 20,
     "unit_price": 246.51,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM020",
@@ -345,7 +373,8 @@
     "stock_quantity": 15,
     "unit_price": 519.75,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM021",
@@ -357,7 +386,8 @@
     "stock_quantity": 12,
     "unit_price": 251.46,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM022",
@@ -369,7 +399,8 @@
     "stock_quantity": 15,
     "unit_price": 318.78,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM023",
@@ -381,7 +412,8 @@
     "stock_quantity": 20,
     "unit_price": 1188.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM024",
@@ -393,7 +425,8 @@
     "stock_quantity": 30,
     "unit_price": 240.57,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "CHEM025",
@@ -405,7 +438,8 @@
     "stock_quantity": 6,
     "unit_price": 4158.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED001",
@@ -417,7 +451,8 @@
     "stock_quantity": 14,
     "unit_price": 46260.72,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED002",
@@ -429,7 +464,8 @@
     "stock_quantity": 18,
     "unit_price": 3987.72,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED003",
@@ -441,7 +477,8 @@
     "stock_quantity": 10,
     "unit_price": 23803.56,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED004",
@@ -453,7 +490,8 @@
     "stock_quantity": 15,
     "unit_price": 4786.65,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED005",
@@ -465,7 +503,8 @@
     "stock_quantity": 12,
     "unit_price": 4870.8,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED006",
@@ -477,7 +516,8 @@
     "stock_quantity": 10,
     "unit_price": 4457.97,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED007",
@@ -489,7 +529,8 @@
     "stock_quantity": 8,
     "unit_price": 3910.5,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED008",
@@ -501,7 +542,8 @@
     "stock_quantity": 20,
     "unit_price": 3338.28,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED009",
@@ -513,7 +555,8 @@
     "stock_quantity": 20,
     "unit_price": 3994.65,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED010",
@@ -525,7 +568,8 @@
     "stock_quantity": 35,
     "unit_price": 3418.47,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED011",
@@ -537,7 +581,8 @@
     "stock_quantity": 18,
     "unit_price": 3762.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED012",
@@ -549,7 +594,8 @@
     "stock_quantity": 12,
     "unit_price": 4100.58,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED013",
@@ -561,7 +607,8 @@
     "stock_quantity": 10,
     "unit_price": 3047.22,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED014",
@@ -573,7 +620,8 @@
     "stock_quantity": 7,
     "unit_price": 1861.2,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED015",
@@ -585,7 +633,8 @@
     "stock_quantity": 15,
     "unit_price": 4928.22,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED016",
@@ -597,7 +646,8 @@
     "stock_quantity": 12,
     "unit_price": 18315.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "MED017",
@@ -609,7 +659,8 @@
     "stock_quantity": 250,
     "unit_price": 3579.84,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA001",
@@ -621,7 +672,8 @@
     "stock_quantity": 6,
     "unit_price": 11206.8,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA002",
@@ -633,7 +685,8 @@
     "stock_quantity": 20,
     "unit_price": 6376.59,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA003",
@@ -645,7 +698,8 @@
     "stock_quantity": 12,
     "unit_price": 386.1,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA004",
@@ -657,7 +711,8 @@
     "stock_quantity": 15,
     "unit_price": 661.32,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA005",
@@ -669,7 +724,8 @@
     "stock_quantity": 25,
     "unit_price": 3032.37,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA006",
@@ -681,7 +737,8 @@
     "stock_quantity": 20,
     "unit_price": 4395.6,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA007",
@@ -693,7 +750,8 @@
     "stock_quantity": 10,
     "unit_price": 7029.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA008",
@@ -705,7 +763,8 @@
     "stock_quantity": 8,
     "unit_price": 15345.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA009",
@@ -717,7 +776,8 @@
     "stock_quantity": 8,
     "unit_price": 4469.85,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA010",
@@ -729,7 +789,8 @@
     "stock_quantity": 20,
     "unit_price": 1386.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "REA011",
@@ -741,7 +802,8 @@
     "stock_quantity": 10,
     "unit_price": 3960.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "ABP001",
@@ -753,7 +815,8 @@
     "stock_quantity": 10,
     "unit_price": 10590.03,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "ABP002",
@@ -765,7 +828,8 @@
     "stock_quantity": 8,
     "unit_price": 3856.05,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "ABP003",
@@ -777,7 +841,8 @@
     "stock_quantity": 10,
     "unit_price": 1932.48,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   },
   {
     "sku": "ABP004",
@@ -789,6 +854,7 @@
     "stock_quantity": 4,
     "unit_price": 8613.0,
     "currency": "INR",
-    "available": true
+    "available": true,
+    "gst_percent": 18
   }
 ]

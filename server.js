@@ -1,21 +1,23 @@
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import cookieParser from "cookie-parser";
 import multer from "multer";
+import "./db.js"; // side effect: opens data/app.db and applies schema.sql on boot
+import authRoutes from "./authRoutes.js";
+import requestsRoutes from "./requestsRoutes.js";
+import adminRoutes from "./adminRoutes.js";
+import rateContractsRoutes from "./rateContractsRoutes.js";
 import { parseOrder } from "./extract.js";
 import { flattenOrders, rowsToCsv } from "./normalize.js";
 import { checkInventoryBulk } from "./inventoryCheck.js";
 import { quoteFromParsedRows } from "./quotation.js";
 import { buildQuotationPdfBuffer } from "./quotationPdf.js";
 
-if (!process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT && !process.env.DI_ENDPOINT) {
+if (!process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || !process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY) {
   console.warn(
-    "AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT is missing. Local PDF parsing will still work, but scanned PDFs/images will fall back to OCR.space unless you set Azure Document Intelligence credentials."
+    "Azure Document Intelligence is not configured. Local document parsing will work, but scanned PDFs/images will fail until AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY are set."
   );
-}
-
-function countParsedBySource(results, source) {
-  return results.filter((result) => result.source === source).length;
 }
 
 const app = express();
@@ -27,7 +29,13 @@ const upload = multer({
 });
 
 app.use(cors());
+app.use(cookieParser());
 app.use(express.json());
+
+app.use("/api/auth", authRoutes);
+app.use("/api/requests", requestsRoutes);
+app.use("/api/admin", adminRoutes);
+app.use("/api/rate-contracts", rateContractsRoutes);
 
 // --- Single file ---------------------------------------------------------
 // POST /api/parse-order   (multipart/form-data, field name: "file")
@@ -100,8 +108,7 @@ app.post("/api/parse-orders", upload.array("files", 25), async (req, res) => {
       succeeded: results.filter((r) => r.success).length,
       failed: results.filter((r) => !r.success).length,
       parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-      parsed_by_azure: countParsedBySource(results, "azure_document_intelligence"),
-      parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
+      parsed_by_ocr: results.filter((r) => r.source === "azure_document_intelligence").length,
       total_line_items: flatRows.length,
     },
   });
@@ -188,8 +195,7 @@ app.post("/api/parse-orders/check-inventory", upload.array("files", 25), async (
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_azure: countParsedBySource(results, "azure_document_intelligence"),
-        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
+        parsed_by_ocr: results.filter((r) => r.source === "azure_document_intelligence").length,
         total_line_items: flatRows.length,
         inventory_checked_items: inventoryCheck.checked ?? 0,
         inventory_skipped_items: inventoryCheck.skipped?.length ?? 0,
@@ -205,8 +211,7 @@ app.post("/api/parse-orders/check-inventory", upload.array("files", 25), async (
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_azure: countParsedBySource(results, "azure_document_intelligence"),
-        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
+        parsed_by_ocr: results.filter((r) => r.source === "azure_document_intelligence").length,
         total_line_items: flatRows.length,
       },
     });
@@ -261,8 +266,7 @@ app.post("/api/parse-orders/quote", upload.array("files", 25), async (req, res) 
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_azure: countParsedBySource(results, "azure_document_intelligence"),
-        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
+        parsed_by_ocr: results.filter((r) => r.source === "azure_document_intelligence").length,
         total_line_items: flatRows.length,
         quoted_items: quotation.checked ?? 0,
         skipped_items: quotation.skipped?.length ?? 0,
@@ -280,8 +284,7 @@ app.post("/api/parse-orders/quote", upload.array("files", 25), async (req, res) 
         succeeded: results.filter((r) => r.success).length,
         failed: results.filter((r) => !r.success).length,
         parsed_locally: results.filter((r) => r.source === "local_pdf_parse").length,
-        parsed_by_azure: countParsedBySource(results, "azure_document_intelligence"),
-        parsed_by_ocr: results.filter((r) => r.source === "ocr_space").length,
+        parsed_by_ocr: results.filter((r) => r.source === "azure_document_intelligence").length,
         total_line_items: flatRows.length,
       },
     });

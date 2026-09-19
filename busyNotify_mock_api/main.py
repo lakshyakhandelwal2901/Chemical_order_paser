@@ -122,6 +122,7 @@ def check_one(request):
         "currency": candidate["currency"],
         "pack_size": candidate.get("pack_size"),
         "unit": candidate.get("unit"),
+        "gst_percent": candidate.get("gst_percent"),
     }
 
 

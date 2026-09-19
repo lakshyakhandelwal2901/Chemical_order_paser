@@ -5,8 +5,7 @@ import { extractPdfLines, hasTextLayer } from "./pdfTextExtract.js";
 import { parseItemTable } from "./tableParser.js";
 import { extractHeaderMetadata } from "./headerMetadata.js";
 
-const OCR_SPACE_ENDPOINT = "https://api.ocr.space/parse/image";
-const OCR_SPACE_DEMO_KEY = "helloworld";
+const AZURE_LAYOUT_API_VERSION = "2024-11-30";
 
 const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"];
 
@@ -56,8 +55,13 @@ function isPdfFile(file) {
   const header = file.buffer?.subarray?.(0, 4)?.toString("ascii") ?? "";
   return header === "%PDF";
 }
-function getOcrSpaceApiKey() {
-  return process.env.OCR_SPACE_API_KEY || process.env.OCRSPACE_API_KEY || OCR_SPACE_DEMO_KEY;
+function getAzureDocumentIntelligenceConfig() {
+  const endpoint = process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT?.replace(/\/+$/, "");
+  const key = process.env.AZURE_DOCUMENT_INTELLIGENCE_KEY;
+  if (!endpoint || !key) {
+    throw new Error("AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT and AZURE_DOCUMENT_INTELLIGENCE_KEY are required for OCR.");
+  }
+  return { endpoint, key };
 }
 
 function getMimeType(file) {
@@ -72,40 +76,6 @@ function getMimeType(file) {
   if (name.endsWith(".webp")) return "image/webp";
   if (name.endsWith(".gif")) return "image/gif";
   return "application/pdf";
-}
-
-function buildOcrSpaceFormData(file) {
-  const mimeType = getMimeType(file);
-  const formData = new FormData();
-  formData.append("file", new Blob([file.buffer], { type: mimeType }), file.originalname || "upload");
-  formData.append("language", "auto");
-  formData.append("isOverlayRequired", "true");
-  formData.append("isTable", "true");
-  formData.append("scale", "true");
-  formData.append("detectOrientation", "true");
-  formData.append("OCREngine", "3");
-  if (mimeType === "application/pdf") {
-    formData.append("filetype", "PDF");
-  }
-  return formData;
-}
-
-function normalizeOverlayLines(pageLines) {
-  const result = [];
-  for (const line of pageLines || []) {
-    const words = Array.isArray(line?.Words) ? line.Words : [];
-    const items = words
-      .map((word) => ({
-        text: String(word?.WordText ?? "").trim(),
-        x: Number(word?.Left ?? 0),
-      }))
-      .filter((item) => item.text.length > 0)
-      .sort((a, b) => a.x - b.x);
-    if (items.length > 0) {
-      result.push({ items });
-    }
-  }
-  return result;
 }
 
 function parsedTextLineToItems(lineText) {
@@ -207,7 +177,7 @@ async function extractDocxImageFallback(file) {
 
     const imageBuffer = await entry.async("nodebuffer");
     try {
-      return await extractOrderFromOcrSpace({
+      return await extractOrderFromAzure({
         buffer: imageBuffer,
         mimetype: imageMimeType,
         originalname: entry.name.split("/").pop() || file.originalname || "embedded-image",
@@ -349,26 +319,25 @@ async function tryLocalDocumentParse(file) {
   return null;
 }
 
-function ocrResultsToLines(parsedResults) {
+function azureResultToLines(analyzeResult) {
   const lines = [];
-  for (const pageResult of parsedResults || []) {
-    const parsedText = String(pageResult?.ParsedText ?? "").trim();
-    if (parsedText) {
-      for (const rawLine of parsedText.split(/\r?\n/)) {
-        const items = parsedTextLineToItems(rawLine);
-        if (items.length > 0) {
-          lines.push({ items });
-        }
-      }
-      continue;
+  for (const table of analyzeResult?.tables || []) {
+    const rows = new Map();
+    for (const cell of table.cells || []) {
+      const row = rows.get(cell.rowIndex) || [];
+      row.push({ text: String(cell.content ?? "").trim(), x: cell.columnIndex * 100 });
+      rows.set(cell.rowIndex, row);
     }
-
-    const overlayLines = normalizeOverlayLines(pageResult?.TextOverlay?.Lines);
-    if (overlayLines.length > 0) {
-      lines.push(...overlayLines);
+    for (const [, row] of [...rows.entries()].sort(([a], [b]) => a - b)) {
+      const items = row.filter((item) => item.text.length > 0).sort((a, b) => a.x - b.x);
+      if (items.length > 0) lines.push({ items });
     }
   }
-  return lines;
+
+  if (lines.length > 0) return lines;
+  return (analyzeResult?.pages || []).flatMap((page) =>
+    (page.lines || []).map((line) => ({ items: [{ text: String(line.content ?? "").trim(), x: 0 }] }))
+  );
 }
 
 async function withRetry(fn, { retries = 2, baseDelayMs = 1200 } = {}) {
@@ -412,40 +381,41 @@ function finalizeParsedOrder(parsed, notes) {
   };
 }
 
-async function extractOrderFromOcrSpace(file) {
-  const apiKey = getOcrSpaceApiKey();
-  const formData = buildOcrSpaceFormData(file);
-  formData.append("apikey", apiKey);
-
+async function extractOrderFromAzure(file) {
+  const { endpoint, key } = getAzureDocumentIntelligenceConfig();
+  const analyzeUrl = `${endpoint}/documentintelligence/documentModels/prebuilt-layout:analyze?api-version=${AZURE_LAYOUT_API_VERSION}`;
   const response = await withRetry(() =>
-    fetch(OCR_SPACE_ENDPOINT, {
+    fetch(analyzeUrl, {
       method: "POST",
-      body: formData,
+      headers: { "Content-Type": getMimeType(file), "Ocp-Apim-Subscription-Key": key },
+      body: file.buffer,
     })
   );
+  if (!response.ok) throw new Error(`Azure Document Intelligence failed with status ${response.status}.`);
+
+  const operationLocation = response.headers.get("operation-location");
+  if (!operationLocation) throw new Error("Azure Document Intelligence did not return an operation location.");
 
   let payload;
-  try {
-    payload = await response.json();
-  } catch (error) {
-    throw new Error(`OCR.space returned a non-JSON response: ${error.message}`);
+  for (let attempt = 0; attempt < 30; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const resultResponse = await fetch(operationLocation, { headers: { "Ocp-Apim-Subscription-Key": key } });
+    payload = await resultResponse.json();
+    if (payload.status === "succeeded") break;
+    if (payload.status === "failed") throw new Error(payload.error?.message || "Azure OCR analysis failed.");
   }
+  if (payload?.status !== "succeeded") throw new Error("Azure OCR analysis timed out.");
 
-  const errorText = [payload?.ErrorMessage, payload?.ErrorDetails].filter(Boolean).join(" ").trim();
-  if (!response.ok || payload?.IsErroredOnProcessing) {
-    throw new Error(errorText || `OCR.space failed with status ${response.status}.`);
-  }
-
-  const lines = ocrResultsToLines(payload?.ParsedResults);
+  const lines = azureResultToLines(payload.analyzeResult);
   const { items, confidence, headerLine } = parseItemTable(lines);
   if (items.length === 0) {
-    throw new Error(errorText || "OCR.space returned text, but no item table could be detected.");
+    throw new Error("Azure OCR returned text, but no item table could be detected.");
   }
 
   const metadata = extractHeaderMetadata(lines, headerLine);
   const notes = confidence === "high"
-    ? "Parsed via OCR.space OCR fallback."
-    : `Parsed via OCR.space OCR fallback with ${confidence} confidence; please review extracted rows.`;
+    ? "Parsed via Azure Document Intelligence OCR fallback."
+    : `Parsed via Azure Document Intelligence OCR fallback with ${confidence} confidence; please review extracted rows.`;
 
   return finalizeParsedOrder(
     {
@@ -466,12 +436,12 @@ async function extractOrderFromOcrSpace(file) {
 
 /**
  * Extracts structured order data from a single uploaded file (PDF or image)
- * using OCR.space for the fallback path.
+ * using Azure Document Intelligence for the fallback path.
  * @param {{ buffer: Buffer, mimetype: string, originalname: string }} file
  * @returns {Promise<object>} parsed order JSON
  */
 export async function extractOrderFromFile(file) {
-  return extractOrderFromOcrSpace(file);
+  return extractOrderFromAzure(file);
 }
 
 /**
@@ -514,12 +484,12 @@ async function tryLocalPdfParse(buffer) {
 /**
  * Parses one uploaded file into the standard order schema, trying the fast
  * local parser first for PDFs, DOCX files, spreadsheets and plain text, and
- * only calling OCR.space when the file is a PDF/image that needs OCR. Images
- * and scanned PDFs go straight to OCR.space, since there's no text layer to
+ * only calling Azure Document Intelligence when the file is a PDF/image that needs OCR. Images
+ * and scanned PDFs go straight to Azure, since there's no text layer to
  * parse locally.
  *
  * @param {{ buffer: Buffer, mimetype: string, originalname: string }} file
- * @returns {Promise<{ source: "local_pdf_parse"|"ocr_space", data: object }>}
+ * @returns {Promise<{ source: "local_pdf_parse"|"azure_document_intelligence", data: object }>}
  */
 export async function parseOrder(file) {
   if (isPdfFile(file)) {
@@ -527,8 +497,8 @@ export async function parseOrder(file) {
       const local = await tryLocalPdfParse(file.buffer);
       if (local) return { source: "local_pdf_parse", data: local };
     } catch (err) {
-      // local parsing is best-effort - any failure just falls through to AI
-      console.warn(`Local PDF parse failed for ${file.originalname}, falling back to OCR.space:`, err.message);
+      // local parsing is best-effort - any failure just falls through to Azure OCR
+      console.warn(`Local PDF parse failed for ${file.originalname}, falling back to Azure OCR:`, err.message);
     }
   }
 
@@ -537,6 +507,6 @@ export async function parseOrder(file) {
     if (local) return { source: "local_pdf_parse", data: local };
   }
 
-  const data = await extractOrderFromOcrSpace(file);
-  return { source: "ocr_space", data };
+  const data = await extractOrderFromAzure(file);
+  return { source: "azure_document_intelligence", data };
 }
