@@ -53,7 +53,7 @@ export function destroySession(sessionId) {
 
 export function setSessionCookies(res, session, role) {
   const cookieOptions = {
-    sameSite: "lax",
+    sameSite: process.env.FRONTEND_ORIGIN ? "none" : "lax",
     secure: process.env.NODE_ENV === "production",
     expires: new Date(session.expiresAt),
   };

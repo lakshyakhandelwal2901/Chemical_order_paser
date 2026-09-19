@@ -22,13 +22,20 @@ if (!process.env.AZURE_DOCUMENT_INTELLIGENCE_ENDPOINT || !process.env.AZURE_DOCU
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const frontendOrigin = process.env.FRONTEND_ORIGIN;
+
+app.use(
+  cors({
+    origin: frontendOrigin || true,
+    credentials: Boolean(frontendOrigin),
+  })
+);
 
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 20 * 1024 * 1024, files: 25 }, // 20MB/file, up to 25 files per batch
 });
 
-app.use(cors());
 app.use(cookieParser());
 app.use(express.json());
 
